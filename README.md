@@ -4,7 +4,7 @@ This is a simple Rust tool that simply just runs OLS on CSV data. Crucially, and
 
 For more information on the latter statistic, see [here](https://en.wikipedia.org/wiki/PRESS_statistic) and Bruce E. Hansen, [*Econometrics*](https://users.ssc.wisc.edu/~behansen/econometrics/), Section 4.18.
 
-This tool does not support regressions without a constant. The output is designed to be easy to parse by other software.
+This tool does not support regressions without a constant. The output is designed to be easy to parse by other software. This tool is faster than R and uses less memory.
 
 ## Building this tool
 
