@@ -1,0 +1,11 @@
+[package]
+name = "justols"
+version = "0.1.0"
+edition = "2024"
+license = "0BSD"
+authors = ["Max R. P. Grossmann <m@max.pm>"]
+
+[dependencies]
+nalgebra = "0.34"
+csv = "1.3"
+statrs = "0.18"
