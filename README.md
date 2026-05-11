@@ -40,6 +40,46 @@ For an intercept-only regression, omit the regressor columns:
 
 The resulting output can be replicated with `data/test.R`.
 
+## Output
+
+Each row is tab-separated. Coefficient rows have five fields:
+
+`name beta hc3-se t-stat p-value`
+
+- `name`: the coefficient name. The intercept is printed as `!Intercept`.
+- `beta`: the OLS coefficient estimate.
+- `hc3-se`: the HC3 heteroskedasticity-consistent standard error.
+- `t-stat`: `beta / hc3-se`.
+- `p-value`: the two-sided p-value for the t-statistic, using `df-resid`
+  degrees of freedom.
+
+The remaining rows are scalar model diagnostics:
+
+- `r-squared`: the usual in-sample coefficient of determination,
+  `1 - SSE / SST`.
+- `r-squared-adj`: adjusted R-squared, penalizing for the number of fitted
+  parameters.
+- `r-squared-loo`: Leave-One-Out R-squared, computed as `1 - PRESS / SST`.
+- `press`: the prediction sum of squares, `sum((e_i / (1 - h_ii))^2)`.
+- `residual-se`: the residual standard error, `sqrt(SSE / df-resid)`.
+- `f-stat-robust`: a robust Wald F-statistic for the joint null that all
+  non-intercept coefficients are zero, using the HC3 covariance matrix.
+- `f-pvalue-robust`: the p-value for `f-stat-robust`, using `df-model` and
+  `df-resid` degrees of freedom.
+- `n`: the number of observations.
+- `df-model`: the number of non-intercept regressors.
+- `df-resid`: residual degrees of freedom, `n` minus the number of fitted
+  parameters including the intercept.
+- `condition-number`: the ratio of the largest to smallest singular value of
+  the design matrix. Larger values indicate more severe collinearity or scaling
+  problems.
+- `max-leverage`: the largest diagonal element of the hat matrix, `max h_ii`.
+
+The HC3 covariance estimator follows MacKinnon and White (1985), "Some
+Heteroskedasticity-Consistent Covariance Matrix Estimators with Improved Finite
+Sample Properties". The Leave-One-Out R-squared is described in Hansen, Section
+4.18, and PRESS is explained [here](https://en.wikipedia.org/wiki/PRESS_statistic).
+
 ## License
 
 0BSD
