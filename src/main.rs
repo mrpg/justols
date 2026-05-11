@@ -27,9 +27,9 @@ fn run_ols(
 ) -> OlsResult {
     let n = data.len();
     let k = col_indices.len() + 1;
-    if n <= k {
+    if n < k {
         eprintln!(
-            "Error: not enough observations for model. Need more rows than parameters (rows: {}, parameters: {}).",
+            "Error: not enough observations for model. Need at least as many rows as parameters (rows: {}, parameters: {}).",
             n, k
         );
         process::exit(1);
@@ -62,40 +62,65 @@ fn run_ols(
     let y_mean = y.iter().sum::<f64>() / n_f;
     let ss_tot: f64 = y.iter().map(|&yi| (yi - y_mean).powi(2)).sum();
     let r_squared = 1.0 - ss_res / ss_tot;
-    let adj_r_squared = 1.0 - (1.0 - r_squared) * (n_f - 1.0) / (n_f - k_f);
-
-    // HC3: Var(b) = (X'X)^-1 X' diag(e_i^2 / (1 - h_ii)^2) X (X'X)^-1
-    // Compute h_ii without forming full hat matrix
-    let mut meat = DMatrix::zeros(k, k);
-    let mut press = 0.0;
-    for i in 0..n {
-        let x_i = x.row(i).transpose();
-        let h_ii = (x.row(i) * &xtx_inv * &x_i)[(0, 0)];
-        let w = residuals[i] / (1.0 - h_ii);
-        press += w * w;
-        let wx = &x_i * w;
-        meat += &wx * wx.transpose();
-    }
-    let vcov = &xtx_inv * &meat * &xtx_inv;
-
-    let loo_r_squared = 1.0 - press / ss_tot;
-
-    let se = DVector::from_fn(k, |i, _| vcov[(i, i)].sqrt());
-    let t_stats = DVector::from_fn(k, |i, _| beta[i] / se[i]);
     let df_resid = n_f - k_f;
-    let t_dist = StudentsT::new(0.0, 1.0, df_resid).unwrap();
-    let p_values: Vec<f64> = t_stats
-        .iter()
-        .map(|&t| 2.0 * (1.0 - t_dist.cdf(t.abs())))
-        .collect();
+    let adj_r_squared = if df_resid > 0.0 {
+        1.0 - (1.0 - r_squared) * (n_f - 1.0) / df_resid
+    } else {
+        f64::NAN
+    };
 
-    let residual_se = (ss_res / df_resid).sqrt();
+    let (se, t_stats, p_values, loo_r_squared, residual_se, f_stat, f_p_value) = if df_resid > 0.0 {
+        // HC3: Var(b) = (X'X)^-1 X' diag(e_i^2 / (1 - h_ii)^2) X (X'X)^-1
+        // Compute h_ii without forming full hat matrix.
+        let mut meat = DMatrix::zeros(k, k);
+        let mut press = 0.0;
+        for i in 0..n {
+            let x_i = x.row(i).transpose();
+            let h_ii = (x.row(i) * &xtx_inv * &x_i)[(0, 0)];
+            let w = residuals[i] / (1.0 - h_ii);
+            press += w * w;
+            let wx = &x_i * w;
+            meat += &wx * wx.transpose();
+        }
+        let vcov = &xtx_inv * &meat * &xtx_inv;
 
-    let ss_reg = ss_tot - ss_res;
-    let df_reg = k_f - 1.0;
-    let f_stat = (ss_reg / df_reg) / (ss_res / df_resid);
-    let f_dist = FisherSnedecor::new(df_reg, df_resid).unwrap();
-    let f_p_value = 1.0 - f_dist.cdf(f_stat);
+        let loo_r_squared = 1.0 - press / ss_tot;
+        let se = DVector::from_fn(k, |i, _| vcov[(i, i)].sqrt());
+        let t_stats = DVector::from_fn(k, |i, _| beta[i] / se[i]);
+        let t_dist = StudentsT::new(0.0, 1.0, df_resid).unwrap();
+        let p_values: Vec<f64> = t_stats
+            .iter()
+            .map(|&t| 2.0 * (1.0 - t_dist.cdf(t.abs())))
+            .collect();
+
+        let residual_se = (ss_res / df_resid).sqrt();
+
+        let ss_reg = ss_tot - ss_res;
+        let df_reg = k_f - 1.0;
+        let f_stat = (ss_reg / df_reg) / (ss_res / df_resid);
+        let f_dist = FisherSnedecor::new(df_reg, df_resid).unwrap();
+        let f_p_value = 1.0 - f_dist.cdf(f_stat);
+
+        (
+            se,
+            t_stats,
+            p_values,
+            loo_r_squared,
+            residual_se,
+            f_stat,
+            f_p_value,
+        )
+    } else {
+        (
+            DVector::from_element(k, f64::NAN),
+            DVector::from_element(k, f64::NAN),
+            vec![f64::NAN; k],
+            f64::NAN,
+            f64::NAN,
+            f64::NAN,
+            f64::NAN,
+        )
+    };
 
     let mut names = Vec::new();
     names.push("!Intercept".to_string());
