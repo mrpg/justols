@@ -12,11 +12,14 @@ struct OlsResult {
     r_squared: f64,
     adj_r_squared: f64,
     loo_r_squared: f64,
+    press: f64,
     f_stat: f64,
     f_p_value: f64,
     n: usize,
     k: usize,
     residual_se: f64,
+    condition_number: f64,
+    max_leverage: f64,
 }
 
 fn run_ols(
@@ -50,6 +53,17 @@ fn run_ols(
         eprintln!("Error: X'X is singular.");
         process::exit(1);
     });
+
+    let condition_number = {
+        let sv = x.singular_values();
+        let sigma_max = sv.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let sigma_min = sv.iter().copied().fold(f64::INFINITY, f64::min);
+        if sigma_min > 0.0 {
+            sigma_max / sigma_min
+        } else {
+            f64::INFINITY
+        }
+    };
     let xty = x.transpose() * &y;
     let beta = &xtx_inv * &xty;
 
@@ -69,9 +83,39 @@ fn run_ols(
         f64::NAN
     };
 
-    let (se, t_stats, p_values, loo_r_squared, residual_se, f_stat, f_p_value) = if df_resid > 0.0 {
-        // HC3: Var(b) = (X'X)^-1 X' diag(e_i^2 / (1 - h_ii)^2) X (X'X)^-1
-        // Compute h_ii without forming full hat matrix.
+    let mut max_leverage = 0.0_f64;
+    for i in 0..n {
+        let x_i = x.row(i).transpose();
+        let h_ii = (x.row(i) * &xtx_inv * &x_i)[(0, 0)];
+        max_leverage = max_leverage.max(h_ii);
+    }
+
+    let mut names = Vec::new();
+    names.push("!Intercept".to_string());
+    for &ci in col_indices {
+        names.push(col_names[ci].clone());
+    }
+
+    let mut result = OlsResult {
+        names,
+        beta,
+        se: DVector::from_element(k, f64::NAN),
+        t_stats: DVector::from_element(k, f64::NAN),
+        p_values: vec![f64::NAN; k],
+        r_squared,
+        adj_r_squared,
+        loo_r_squared: f64::NAN,
+        press: f64::NAN,
+        f_stat: f64::NAN,
+        f_p_value: f64::NAN,
+        n,
+        k,
+        residual_se: f64::NAN,
+        condition_number,
+        max_leverage,
+    };
+
+    if df_resid > 0.0 {
         let mut meat = DMatrix::zeros(k, k);
         let mut press = 0.0;
         for i in 0..n {
@@ -84,69 +128,33 @@ fn run_ols(
         }
         let vcov = &xtx_inv * &meat * &xtx_inv;
 
-        let loo_r_squared = 1.0 - press / ss_tot;
-        let se = DVector::from_fn(k, |i, _| vcov[(i, i)].sqrt());
-        let t_stats = DVector::from_fn(k, |i, _| beta[i] / se[i]);
+        result.loo_r_squared = 1.0 - press / ss_tot;
+        result.press = press;
+        result.se = DVector::from_fn(k, |i, _| vcov[(i, i)].sqrt());
+        result.t_stats = DVector::from_fn(k, |i, _| result.beta[i] / result.se[i]);
         let t_dist = StudentsT::new(0.0, 1.0, df_resid).unwrap();
-        let p_values: Vec<f64> = t_stats
+        result.p_values = result
+            .t_stats
             .iter()
             .map(|&t| 2.0 * (1.0 - t_dist.cdf(t.abs())))
             .collect();
-
-        let residual_se = (ss_res / df_resid).sqrt();
+        result.residual_se = (ss_res / df_resid).sqrt();
 
         let df_reg = k_f - 1.0;
-        let (f_stat, f_p_value) = if df_reg > 0.0 {
-            let ss_reg = ss_tot - ss_res;
-            let f_stat = (ss_reg / df_reg) / (ss_res / df_resid);
-            let f_dist = FisherSnedecor::new(df_reg, df_resid).unwrap();
-            (f_stat, 1.0 - f_dist.cdf(f_stat))
-        } else {
-            (f64::NAN, f64::NAN)
-        };
-
-        (
-            se,
-            t_stats,
-            p_values,
-            loo_r_squared,
-            residual_se,
-            f_stat,
-            f_p_value,
-        )
-    } else {
-        (
-            DVector::from_element(k, f64::NAN),
-            DVector::from_element(k, f64::NAN),
-            vec![f64::NAN; k],
-            f64::NAN,
-            f64::NAN,
-            f64::NAN,
-            f64::NAN,
-        )
-    };
-
-    let mut names = Vec::new();
-    names.push("!Intercept".to_string());
-    for &ci in col_indices {
-        names.push(col_names[ci].clone());
+        if df_reg > 0.0 {
+            let q = k - 1;
+            let beta_slope = DVector::from_fn(q, |i, _| result.beta[i + 1]);
+            let vcov_slope = DMatrix::from_fn(q, q, |i, j| vcov[(i + 1, j + 1)]);
+            if let Some(vcov_slope_inv) = vcov_slope.try_inverse() {
+                let wald = (beta_slope.transpose() * &vcov_slope_inv * &beta_slope)[(0, 0)];
+                result.f_stat = wald / df_reg;
+                let f_dist = FisherSnedecor::new(df_reg, df_resid).unwrap();
+                result.f_p_value = 1.0 - f_dist.cdf(result.f_stat);
+            }
+        }
     }
 
-    OlsResult {
-        names,
-        beta,
-        se,
-        t_stats,
-        p_values,
-        r_squared,
-        adj_r_squared,
-        loo_r_squared,
-        f_stat,
-        f_p_value,
-        n,
-        k,
-        residual_se,
-    }
+    result
 }
 
 fn print_results(r: &OlsResult) {
@@ -159,12 +167,15 @@ fn print_results(r: &OlsResult) {
     println!("r-squared\t{}", r.r_squared);
     println!("r-squared-adj\t{}", r.adj_r_squared);
     println!("r-squared-loo\t{}", r.loo_r_squared);
+    println!("press\t{}", r.press);
     println!("residual-se\t{}", r.residual_se);
-    println!("f-stat\t{}", r.f_stat);
-    println!("f-pvalue\t{}", r.f_p_value);
+    println!("f-stat-robust\t{}", r.f_stat);
+    println!("f-pvalue-robust\t{}", r.f_p_value);
     println!("n\t{}", r.n);
     println!("df-model\t{}", r.k - 1);
     println!("df-resid\t{}", r.n - r.k);
+    println!("condition-number\t{}", r.condition_number);
+    println!("max-leverage\t{}", r.max_leverage);
 }
 
 struct Opts {

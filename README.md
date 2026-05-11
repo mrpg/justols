@@ -4,10 +4,14 @@
 data. It always includes a constant and prints tab-separated output that is easy
 for other programs to parse.
 
-Unlike many minimal OLS tools, it reports HC3 standard errors and a
-Leave-One-Out R², $\widetilde{R}^2$, by default. For more information on the
-latter statistic, see the [PRESS statistic](https://en.wikipedia.org/wiki/PRESS_statistic)
-and Bruce E. Hansen, [*Econometrics*](https://users.ssc.wisc.edu/~behansen/econometrics/),
+Unlike many minimal OLS tools, it reports HC3 standard errors, a robust Wald
+F-statistic (using the HC3 covariance), a Leave-One-Out R² ($\widetilde{R}^2$)
+with the raw PRESS statistic, the condition number of the design matrix, and the
+maximum leverage ($\max h_{ii}$), all by default.
+
+For more information on the LOO R², see the
+[PRESS statistic](https://en.wikipedia.org/wiki/PRESS_statistic) and Bruce E.
+Hansen, [*Econometrics*](https://users.ssc.wisc.edu/~behansen/econometrics/),
 Section 4.18.
 
 The tool supports intercept-only regressions, but does not support regressions
