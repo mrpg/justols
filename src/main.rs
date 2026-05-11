@@ -95,11 +95,15 @@ fn run_ols(
 
         let residual_se = (ss_res / df_resid).sqrt();
 
-        let ss_reg = ss_tot - ss_res;
         let df_reg = k_f - 1.0;
-        let f_stat = (ss_reg / df_reg) / (ss_res / df_resid);
-        let f_dist = FisherSnedecor::new(df_reg, df_resid).unwrap();
-        let f_p_value = 1.0 - f_dist.cdf(f_stat);
+        let (f_stat, f_p_value) = if df_reg > 0.0 {
+            let ss_reg = ss_tot - ss_res;
+            let f_stat = (ss_reg / df_reg) / (ss_res / df_resid);
+            let f_dist = FisherSnedecor::new(df_reg, df_resid).unwrap();
+            (f_stat, 1.0 - f_dist.cdf(f_stat))
+        } else {
+            (f64::NAN, f64::NAN)
+        };
 
         (
             se,
@@ -182,8 +186,8 @@ fn parse_args() -> Opts {
         }
     }
 
-    if positional.len() < 3 {
-        eprintln!("Usage: justols [flags] <data.csv> <outcome> <x1> [x2] ...");
+    if positional.len() < 2 {
+        eprintln!("Usage: justols [flags] <data.csv> <outcome> [x1] [x2] ...");
         eprintln!("Flags:");
         eprintln!("  (none currently supported)");
         process::exit(1);

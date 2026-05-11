@@ -12,7 +12,7 @@ This tool does not support regressions without a constant. The output is designe
 
 ## Example usage
 
-`cargo run --release -- data/test.csv outcome x1 x2 x3`
+`cargo run --release -- data/test.csv outcome [x1] [x2] ...`
 
 The resulting output can be replicated with `data/test.R`.
 
