@@ -3,23 +3,9 @@ use nalgebra::{DMatrix, DVector};
 use statrs::distribution::{ContinuousCDF, FisherSnedecor, StudentsT};
 use std::{env, process};
 
-struct OlsResult {
-    names: Vec<String>,
-    beta: DVector<f64>,
-    se: DVector<f64>,
-    t_stats: DVector<f64>,
-    p_values: Vec<f64>,
-    r_squared: f64,
-    adj_r_squared: f64,
-    loo_r_squared: f64,
-    press: f64,
-    f_stat: f64,
-    f_p_value: f64,
-    n: usize,
-    k: usize,
-    residual_se: f64,
-    condition_number: f64,
-    max_leverage: f64,
+struct ResultRow {
+    name: String,
+    values: Vec<f64>,
 }
 
 fn run_ols(
@@ -27,7 +13,7 @@ fn run_ols(
     col_indices: &[usize],
     dep_idx: usize,
     col_names: &[String],
-) -> OlsResult {
+) -> Vec<ResultRow> {
     let n = data.len();
     let k = col_indices.len() + 1;
     if n < k {
@@ -96,28 +82,18 @@ fn run_ols(
         names.push(col_names[ci].clone());
     }
 
-    let mut result = OlsResult {
-        names,
-        beta,
-        se: DVector::from_element(k, f64::NAN),
-        t_stats: DVector::from_element(k, f64::NAN),
-        p_values: vec![f64::NAN; k],
-        r_squared,
-        adj_r_squared,
-        loo_r_squared: f64::NAN,
-        press: f64::NAN,
-        f_stat: f64::NAN,
-        f_p_value: f64::NAN,
-        n,
-        k,
-        residual_se: f64::NAN,
-        condition_number,
-        max_leverage,
-    };
+    let mut se = DVector::from_element(k, f64::NAN);
+    let mut t_stats = DVector::from_element(k, f64::NAN);
+    let mut p_values = vec![f64::NAN; k];
+    let mut loo_r_squared = f64::NAN;
+    let mut press = f64::NAN;
+    let mut residual_se = f64::NAN;
+    let mut f_stat = f64::NAN;
+    let mut f_p_value = f64::NAN;
 
     if df_resid > 0.0 {
         let mut meat = DMatrix::zeros(k, k);
-        let mut press = 0.0;
+        press = 0.0;
         for i in 0..n {
             let x_i = x.row(i).transpose();
             let h_ii = (x.row(i) * &xtx_inv * &x_i)[(0, 0)];
@@ -128,54 +104,67 @@ fn run_ols(
         }
         let vcov = &xtx_inv * &meat * &xtx_inv;
 
-        result.loo_r_squared = 1.0 - press / ss_tot;
-        result.press = press;
-        result.se = DVector::from_fn(k, |i, _| vcov[(i, i)].sqrt());
-        result.t_stats = DVector::from_fn(k, |i, _| result.beta[i] / result.se[i]);
+        loo_r_squared = 1.0 - press / ss_tot;
+        se = DVector::from_fn(k, |i, _| vcov[(i, i)].sqrt());
+        t_stats = DVector::from_fn(k, |i, _| beta[i] / se[i]);
         let t_dist = StudentsT::new(0.0, 1.0, df_resid).unwrap();
-        result.p_values = result
-            .t_stats
+        p_values = t_stats
             .iter()
             .map(|&t| 2.0 * (1.0 - t_dist.cdf(t.abs())))
             .collect();
-        result.residual_se = (ss_res / df_resid).sqrt();
+        residual_se = (ss_res / df_resid).sqrt();
 
         let df_reg = k_f - 1.0;
         if df_reg > 0.0 {
             let q = k - 1;
-            let beta_slope = DVector::from_fn(q, |i, _| result.beta[i + 1]);
+            let beta_slope = DVector::from_fn(q, |i, _| beta[i + 1]);
             let vcov_slope = DMatrix::from_fn(q, q, |i, j| vcov[(i + 1, j + 1)]);
             if let Some(vcov_slope_inv) = vcov_slope.try_inverse() {
                 let wald = (beta_slope.transpose() * &vcov_slope_inv * &beta_slope)[(0, 0)];
-                result.f_stat = wald / df_reg;
+                f_stat = wald / df_reg;
                 let f_dist = FisherSnedecor::new(df_reg, df_resid).unwrap();
-                result.f_p_value = 1.0 - f_dist.cdf(result.f_stat);
+                f_p_value = 1.0 - f_dist.cdf(f_stat);
             }
         }
     }
 
-    result
+    let mut rows = Vec::new();
+    for i in 0..k {
+        rows.push(ResultRow {
+            name: names[i].clone(),
+            values: vec![beta[i], se[i], t_stats[i], p_values[i]],
+        });
+    }
+    push_scalar(&mut rows, "r-squared", r_squared);
+    push_scalar(&mut rows, "r-squared-adj", adj_r_squared);
+    push_scalar(&mut rows, "r-squared-loo", loo_r_squared);
+    push_scalar(&mut rows, "press", press);
+    push_scalar(&mut rows, "residual-se", residual_se);
+    push_scalar(&mut rows, "f-stat-robust", f_stat);
+    push_scalar(&mut rows, "f-pvalue-robust", f_p_value);
+    push_scalar(&mut rows, "n", n as f64);
+    push_scalar(&mut rows, "df-model", (k - 1) as f64);
+    push_scalar(&mut rows, "df-resid", (n - k) as f64);
+    push_scalar(&mut rows, "condition-number", condition_number);
+    push_scalar(&mut rows, "max-leverage", max_leverage);
+    rows
 }
 
-fn print_results(r: &OlsResult) {
-    for i in 0..r.k {
-        println!(
-            "{}\t{}\t{}\t{}\t{}",
-            r.names[i], r.beta[i], r.se[i], r.t_stats[i], r.p_values[i]
-        );
+fn push_scalar(rows: &mut Vec<ResultRow>, name: &str, value: f64) {
+    rows.push(ResultRow {
+        name: name.to_string(),
+        values: vec![value],
+    });
+}
+
+fn print_results(rows: &[ResultRow]) {
+    for row in rows {
+        print!("{}", row.name);
+        for value in &row.values {
+            print!("\t{}", value);
+        }
+        println!();
     }
-    println!("r-squared\t{}", r.r_squared);
-    println!("r-squared-adj\t{}", r.adj_r_squared);
-    println!("r-squared-loo\t{}", r.loo_r_squared);
-    println!("press\t{}", r.press);
-    println!("residual-se\t{}", r.residual_se);
-    println!("f-stat-robust\t{}", r.f_stat);
-    println!("f-pvalue-robust\t{}", r.f_p_value);
-    println!("n\t{}", r.n);
-    println!("df-model\t{}", r.k - 1);
-    println!("df-resid\t{}", r.n - r.k);
-    println!("condition-number\t{}", r.condition_number);
-    println!("max-leverage\t{}", r.max_leverage);
 }
 
 struct Opts {
