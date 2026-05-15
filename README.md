@@ -34,6 +34,14 @@ The first argument is the CSV file, the second is the outcome column, and any
 remaining arguments are regressor columns. Column names are read from the CSV
 header row.
 
+To compute one-way clustered HC3 standard errors, pass a single cluster column:
+
+`target/release/justols --cluster subject_id data/test.csv outcome [x1] [x2] ...`
+
+The cluster column must be present in the CSV. Its values are read as raw CSV
+fields and grouped by exact equality, so cluster IDs may be strings, integers,
+or other non-numeric labels.
+
 For an intercept-only regression, omit the regressor columns:
 
 `target/release/justols data/test.csv outcome`
@@ -51,7 +59,9 @@ Each row is tab-separated. Coefficient rows have five fields:
 - `hc3-se`: the HC3 heteroskedasticity-consistent standard error.
 - `t-stat`: `beta / hc3-se`.
 - `p-value`: the two-sided p-value for the t-statistic, using `df-resid`
-  degrees of freedom.
+  degrees of freedom. With `--cluster`, the standard error is the one-way
+  clustered HC3 standard error and p-values use `n-clusters - 1` degrees of
+  freedom.
 
 The remaining rows are scalar model diagnostics:
 
@@ -65,11 +75,14 @@ The remaining rows are scalar model diagnostics:
 - `f-stat-robust`: a robust Wald F-statistic for the joint null that all
   non-intercept coefficients are zero, using the HC3 covariance matrix.
 - `f-pvalue-robust`: the p-value for `f-stat-robust`, using `df-model` and
-  `df-resid` degrees of freedom.
+  `df-resid` degrees of freedom. With `--cluster`, the denominator degrees of
+  freedom are `n-clusters - 1`.
 - `n`: the number of observations.
 - `df-model`: the number of non-intercept regressors.
 - `df-resid`: residual degrees of freedom, `n` minus the number of fitted
   parameters including the intercept.
+- `n-clusters`: the number of distinct cluster values. Printed only when
+  `--cluster` is used.
 - `condition-number`: the ratio of the largest to smallest singular value of
   the design matrix. Larger values indicate more severe collinearity or scaling
   problems.
@@ -77,8 +90,11 @@ The remaining rows are scalar model diagnostics:
 
 The HC3 covariance estimator follows MacKinnon and White (1985), "Some
 Heteroskedasticity-Consistent Covariance Matrix Estimators with Improved Finite
-Sample Properties". The Leave-One-Out R-squared is described in Hansen, Section
-4.18, and PRESS is explained [here](https://en.wikipedia.org/wiki/PRESS_statistic).
+Sample Properties". With `--cluster`, `justols` forms HC3-adjusted score
+contributions for each observation, sums them within each cluster, and uses the
+outer product of those cluster sums as the sandwich meat. The Leave-One-Out
+R-squared is described in Hansen, Section 4.18, and PRESS is explained
+[here](https://en.wikipedia.org/wiki/PRESS_statistic).
 
 ## License
 

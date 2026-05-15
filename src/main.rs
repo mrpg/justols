@@ -1,6 +1,7 @@
 use csv::ReaderBuilder;
 use nalgebra::{DMatrix, DVector};
 use statrs::distribution::{ContinuousCDF, FisherSnedecor, StudentsT};
+use std::collections::{HashMap, HashSet};
 use std::{env, process};
 
 struct ResultRow {
@@ -13,6 +14,7 @@ fn run_ols(
     col_indices: &[usize],
     dep_idx: usize,
     col_names: &[String],
+    clusters: Option<&[String]>,
 ) -> Vec<ResultRow> {
     let n = data.len();
     let k = col_indices.len() + 1;
@@ -69,12 +71,13 @@ fn run_ols(
         f64::NAN
     };
 
-    let mut max_leverage = 0.0_f64;
+    let mut leverages = Vec::with_capacity(n);
     for i in 0..n {
         let x_i = x.row(i).transpose();
         let h_ii = (x.row(i) * &xtx_inv * &x_i)[(0, 0)];
-        max_leverage = max_leverage.max(h_ii);
+        leverages.push(h_ii);
     }
+    let max_leverage = leverages.iter().copied().fold(0.0_f64, f64::max);
 
     let mut names = Vec::new();
     names.push("!Intercept".to_string());
@@ -90,28 +93,60 @@ fn run_ols(
     let mut residual_se = f64::NAN;
     let mut f_stat = f64::NAN;
     let mut f_p_value = f64::NAN;
+    let cluster_count = clusters
+        .map(|labels| {
+            labels
+                .iter()
+                .map(String::as_str)
+                .collect::<HashSet<_>>()
+                .len() as f64
+        })
+        .unwrap_or(f64::NAN);
 
     if df_resid > 0.0 {
         let mut meat = DMatrix::zeros(k, k);
         press = 0.0;
-        for i in 0..n {
-            let x_i = x.row(i).transpose();
-            let h_ii = (x.row(i) * &xtx_inv * &x_i)[(0, 0)];
-            let w = residuals[i] / (1.0 - h_ii);
-            press += w * w;
-            let wx = &x_i * w;
-            meat += &wx * wx.transpose();
+        if let Some(cluster_labels) = clusters {
+            let mut cluster_scores: HashMap<&str, DVector<f64>> = HashMap::new();
+            for i in 0..n {
+                let x_i = x.row(i).transpose();
+                let w = residuals[i] / (1.0 - leverages[i]);
+                press += w * w;
+                let wx = &x_i * w;
+                let entry = cluster_scores
+                    .entry(cluster_labels[i].as_str())
+                    .or_insert_with(|| DVector::zeros(k));
+                *entry += wx;
+            }
+            if cluster_scores.len() > 1 {
+                for score in cluster_scores.values() {
+                    meat += score * score.transpose();
+                }
+            } else {
+                meat.fill(f64::NAN);
+            }
+        } else {
+            for i in 0..n {
+                let x_i = x.row(i).transpose();
+                let w = residuals[i] / (1.0 - leverages[i]);
+                press += w * w;
+                let wx = &x_i * w;
+                meat += &wx * wx.transpose();
+            }
         }
         let vcov = &xtx_inv * &meat * &xtx_inv;
 
         loo_r_squared = 1.0 - press / ss_tot;
         se = DVector::from_fn(k, |i, _| vcov[(i, i)].sqrt());
         t_stats = DVector::from_fn(k, |i, _| beta[i] / se[i]);
-        let t_dist = StudentsT::new(0.0, 1.0, df_resid).unwrap();
-        p_values = t_stats
-            .iter()
-            .map(|&t| 2.0 * (1.0 - t_dist.cdf(t.abs())))
-            .collect();
+        let inference_df = clusters.map(|_| cluster_count - 1.0).unwrap_or(df_resid);
+        if inference_df > 0.0 {
+            let t_dist = StudentsT::new(0.0, 1.0, inference_df).unwrap();
+            p_values = t_stats
+                .iter()
+                .map(|&t| 2.0 * (1.0 - t_dist.cdf(t.abs())))
+                .collect();
+        }
         residual_se = (ss_res / df_resid).sqrt();
 
         let df_reg = k_f - 1.0;
@@ -122,8 +157,10 @@ fn run_ols(
             if let Some(vcov_slope_inv) = vcov_slope.try_inverse() {
                 let wald = (beta_slope.transpose() * &vcov_slope_inv * &beta_slope)[(0, 0)];
                 f_stat = wald / df_reg;
-                let f_dist = FisherSnedecor::new(df_reg, df_resid).unwrap();
-                f_p_value = 1.0 - f_dist.cdf(f_stat);
+                if inference_df > 0.0 {
+                    let f_dist = FisherSnedecor::new(df_reg, inference_df).unwrap();
+                    f_p_value = 1.0 - f_dist.cdf(f_stat);
+                }
             }
         }
     }
@@ -145,6 +182,9 @@ fn run_ols(
     push_scalar(&mut rows, "n", n as f64);
     push_scalar(&mut rows, "df-model", (k - 1) as f64);
     push_scalar(&mut rows, "df-resid", (n - k) as f64);
+    if clusters.is_some() {
+        push_scalar(&mut rows, "n-clusters", cluster_count);
+    }
     push_scalar(&mut rows, "condition-number", condition_number);
     push_scalar(&mut rows, "max-leverage", max_leverage);
     rows
@@ -171,30 +211,43 @@ struct Opts {
     csv_path: String,
     dep_var: String,
     indep_vars: Vec<String>,
+    cluster_var: Option<String>,
 }
 
 fn parse_args() -> Opts {
     let args: Vec<String> = env::args().skip(1).collect();
 
-    let mut flags = Vec::new();
     let mut positional = Vec::new();
-    for arg in &args {
-        if arg.starts_with("--") {
-            flags.push(arg.as_str());
+    let mut cluster_var = None;
+    let mut i = 0;
+    while i < args.len() {
+        let arg = &args[i];
+        if arg == "--cluster" {
+            i += 1;
+            if i >= args.len() {
+                eprintln!("Error: --cluster requires a column name.");
+                process::exit(1);
+            }
+            cluster_var = Some(args[i].clone());
+        } else if let Some(value) = arg.strip_prefix("--cluster=") {
+            if value.is_empty() {
+                eprintln!("Error: --cluster requires a column name.");
+                process::exit(1);
+            }
+            cluster_var = Some(value.to_string());
+        } else if arg.starts_with("--") {
+            eprintln!("Unknown flag: {}", arg);
+            process::exit(1);
         } else {
             positional.push(arg.clone());
         }
+        i += 1;
     }
 
     if positional.len() < 2 {
         eprintln!("Usage: justols [flags] <data.csv> <outcome> [x1] [x2] ...");
         eprintln!("Flags:");
-        eprintln!("  (none currently supported)");
-        process::exit(1);
-    }
-
-    for flag in &flags {
-        eprintln!("Unknown flag: {}", flag);
+        eprintln!("  --cluster <column>    Compute one-way clustered HC3 standard errors.");
         process::exit(1);
     }
 
@@ -202,6 +255,7 @@ fn parse_args() -> Opts {
         csv_path: positional[0].clone(),
         dep_var: positional[1].clone(),
         indep_vars: positional[2..].to_vec(),
+        cluster_var,
     }
 }
 
@@ -239,6 +293,20 @@ fn main() {
             process::exit(1);
         });
 
+    let cluster_idx = opts.cluster_var.as_ref().map(|cluster_var| {
+        headers
+            .iter()
+            .position(|h| h == cluster_var)
+            .unwrap_or_else(|| {
+                eprintln!(
+                    "Error: cluster column '{}' not found. Available: {}",
+                    cluster_var,
+                    headers.join(", ")
+                );
+                process::exit(1);
+            })
+    });
+
     let mut indep_indices = Vec::new();
     for var in &indep_vars {
         let idx = headers.iter().position(|h| h == var).unwrap_or_else(|| {
@@ -253,11 +321,22 @@ fn main() {
     }
 
     let mut data: Vec<Vec<f64>> = Vec::new();
+    let mut clusters: Vec<String> = Vec::new();
     for result in reader.records() {
         let record = result.unwrap_or_else(|e| {
             eprintln!("Error reading CSV row: {}", e);
             process::exit(1);
         });
+        if let Some(idx) = cluster_idx {
+            let field = record.get(idx).unwrap_or_else(|| {
+                eprintln!(
+                    "Error: row has no value for cluster column '{}'.",
+                    headers[idx]
+                );
+                process::exit(1);
+            });
+            clusters.push(field.to_string());
+        }
         let mut row = vec![0.0; headers.len()];
         for &idx in std::iter::once(&dep_idx).chain(indep_indices.iter()) {
             let field = record.get(idx).unwrap_or_else(|| {
@@ -280,6 +359,7 @@ fn main() {
         process::exit(1);
     }
 
-    let result = run_ols(&data, &indep_indices, dep_idx, &headers);
+    let cluster_labels = cluster_idx.map(|_| clusters.as_slice());
+    let result = run_ols(&data, &indep_indices, dep_idx, &headers, cluster_labels);
     print_results(&result);
 }
