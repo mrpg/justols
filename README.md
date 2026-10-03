@@ -132,6 +132,14 @@ outer product of those cluster sums as the sandwich meat. The Leave-One-Out
 R-squared is described in Hansen, Section 4.18, and PRESS is explained
 [here](https://en.wikipedia.org/wiki/PRESS_statistic).
 
+## Parse output in Python
+
+Run `uv run parse_justols.py result.tsv`, or pipe the binary's output into
+`uv run parse_justols.py`. The script prints a `Fit` dataclass. Coefficient
+values use the Rust `Coefficient` field names; diagnostics retain the row names
+above. Counts are integers, and undefined values remain floating-point `NaN`.
+Adapt that Python script for your own purposes.
+
 ## License
 
 0BSD
