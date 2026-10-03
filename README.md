@@ -48,6 +48,34 @@ For an intercept-only regression, omit the regressor columns:
 
 The resulting output can be replicated with `data/test.R`.
 
+## Using it as a library
+
+`justols` is also a Rust library. To use it without the command-line tool and its CSV dependency, add it from GitHub with default features off:
+
+```toml
+[dependencies]
+justols = { git = "https://github.com/mrpg/justols", default-features = false }
+```
+
+Models are built from borrowed slices, and every model includes a constant:
+
+```rust
+use justols::Ols;
+
+let fit = Ols::new(&y)
+    .regressor("x1", &x1)
+    .regressor("x2", &x2)
+    .cluster(&firm_ids) // optional: any hashable label type
+    .fit()?;
+
+for c in fit.coefficients() {
+    println!("{}: {} (p = {:?})", c.term, c.estimate, c.p_value);
+}
+println!("LOO R²: {:?}", fit.loo_r_squared());
+```
+
+`fit` returns a `justols::Error` for mismatched lengths, non-finite values, too few observations or a singular design. Statistics that are not defined, which the command-line tool prints as `NaN`, are `None` in the library. Run `cargo doc --open` for the full API.
+
 ## Output
 
 Each row is tab-separated. Coefficient rows have five fields:
