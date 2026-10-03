@@ -1,5 +1,4 @@
-singular	data/test.csv outcome x1 x1
-too-few-rows	tests/fixtures/constant.csv y y y y
+too-few-rows	tests/fixtures/tiny.csv y a b c
 missing-column	data/test.csv outcome nope
 missing-cluster	--cluster nope data/test.csv outcome x1
 non-numeric	tests/fixtures/unused-string.csv y id
@@ -11,3 +10,5 @@ cluster-no-value	data/test.csv outcome --cluster
 cluster-empty-eq	--cluster= data/test.csv outcome
 empty	tests/fixtures/empty.csv y
 non-finite	tests/fixtures/nan.csv y x
+singular	tests/fixtures/collinear.csv y a b
+duplicate	data/test.csv outcome x1 x1

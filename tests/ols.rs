@@ -139,7 +139,7 @@ fn coefficients_are_named() {
     let fit = fit_full(&test_data(), None);
     assert_eq!(fit.intercept().term, Term::Intercept);
     assert_eq!(fit.intercept().term.to_string(), "!Intercept");
-    assert_eq!(fit.coefficient("x2").unwrap().term.name(), Some("x2"));
+    assert_eq!(fit.coefficient("x2").unwrap().term, "x2");
     assert!(fit.coefficient("x4").is_none());
     let names: Vec<_> = fit
         .coefficients()
@@ -282,4 +282,130 @@ fn models_are_reusable() {
     let b = model.clone().cluster([0, 0, 1, 1]).fit().unwrap();
     assert_eq!(a.coefficients()[1].estimate, b.coefficients()[1].estimate);
     assert_ne!(a.coefficients()[1].std_error, b.coefficients()[1].std_error);
+}
+
+fn factor_data() -> (Vec<f64>, Vec<f64>, Vec<String>) {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/factors.csv");
+    let text = std::fs::read_to_string(path).unwrap();
+    let (mut y, mut x, mut group) = (Vec::new(), Vec::new(), Vec::new());
+    for line in text.lines().skip(1) {
+        let fields: Vec<_> = line.split(',').collect();
+        y.push(fields[0].parse().unwrap());
+        x.push(fields[1].parse().unwrap());
+        group.push(fields[2].to_owned());
+    }
+    (y, x, group)
+}
+
+#[test]
+fn factor_matches_r() {
+    let (y, x, group) = factor_data();
+    let fit = Ols::new(&y)
+        .regressor("x", &x)
+        .factor("group", &group, "control")
+        .fit()
+        .unwrap();
+
+    let terms: Vec<_> = fit
+        .coefficients()
+        .iter()
+        .map(|c| c.term.to_string())
+        .collect();
+    assert_eq!(terms, ["!Intercept", "x", "group:low", "group:high"]);
+    assert_eq!(
+        fit.coefficients()[2].term,
+        Term::Level {
+            factor: "group".into(),
+            level: "low".into()
+        }
+    );
+
+    let beta = [
+        0.859_888_323_971_552_9,
+        0.711_432_126_184_587_2,
+        0.771_419_130_164_697_4,
+        -0.316_225_801_149_579_16,
+    ];
+    let se = [
+        0.458_923_005_271_738_74,
+        0.303_515_927_914_548_57,
+        0.558_045_197_448_907_1,
+        0.666_428_107_678_792_2,
+    ];
+    for ((c, beta), se) in fit.coefficients().iter().zip(beta).zip(se) {
+        assert_close(c.estimate, beta);
+        assert_close(c.std_error.unwrap(), se);
+    }
+    assert_eq!(fit.df_model(), 3);
+    assert_eq!(fit.wald_test().unwrap().df_num, 3);
+}
+
+#[test]
+fn factor_levels_are_compared_as_text() {
+    let y = [1.0, 2.0, 4.0, 3.0, 6.0, 5.0];
+    let fit = Ols::new(&y)
+        .factor("year", [2020, 2020, 2021, 2021, 2022, 2022], "2021")
+        .fit()
+        .unwrap();
+    let terms: Vec<_> = fit
+        .coefficients()
+        .iter()
+        .map(|c| c.term.to_string())
+        .collect();
+    assert_eq!(terms, ["!Intercept", "year:2020", "year:2022"]);
+    assert_close(fit.intercept().estimate, 3.5);
+
+    // Levels may contain ':', names may not.
+    let fit = Ols::new(&y)
+        .factor("t", ["a:1", "a:1", "a:2", "a:2", "b", "b"], "b")
+        .fit()
+        .unwrap();
+    assert!(fit.coefficient("t:a:1").is_some());
+}
+
+#[test]
+fn factor_errors() {
+    let y = [1.0, 2.0, 3.0, 4.0];
+    let g = ["a", "a", "b", "b"];
+
+    let err = Ols::new(&y).factor("g", g, "c").fit().unwrap_err();
+    assert_eq!(
+        err,
+        Error::UnknownReference {
+            factor: "g".into(),
+            reference: "c".into()
+        }
+    );
+
+    let err = Ols::new(&y).factor("g", ["a"; 4], "a").fit().unwrap_err();
+    assert_eq!(err, Error::SingleLevel { factor: "g".into() });
+
+    let err = Ols::new(&y).factor("g", &g[..3], "a").fit().unwrap_err();
+    assert_eq!(
+        err,
+        Error::LengthMismatch {
+            name: "g".into(),
+            expected: 4,
+            found: 3
+        }
+    );
+
+    let err = Ols::new(&y).factor("g:h", g, "a").fit().unwrap_err();
+    assert_eq!(err, Error::InvalidName { name: "g:h".into() });
+    let err = Ols::new(&y).regressor("x:1", &y).fit().unwrap_err();
+    assert_eq!(err, Error::InvalidName { name: "x:1".into() });
+
+    let x = [1.0, 0.0, 1.0, 0.0];
+    let err = Ols::new(&y)
+        .regressor("x", &x)
+        .regressor("x", &x)
+        .fit()
+        .unwrap_err();
+    assert_eq!(err, Error::DuplicateName { name: "x".into() });
+    let err = Ols::new(&y)
+        .factor("g", g, "a")
+        .factor("g", g, "b")
+        .fit()
+        .unwrap_err();
+    assert_eq!(err, Error::DuplicateName { name: "g".into() });
 }

@@ -1,4 +1,6 @@
-use std::collections::HashMap;
+use std::borrow::Cow;
+use std::collections::{HashMap, HashSet};
+use std::fmt::Display;
 use std::hash::Hash;
 
 use nalgebra::{DMatrix, DVector};
@@ -13,27 +15,67 @@ use crate::{Coefficient, Error, Fit, Term, WaldTest};
 #[must_use]
 pub struct Ols<'a> {
     y: &'a [f64],
-    regressors: Vec<(String, &'a [f64])>,
+    inputs: Vec<Input<'a>>,
     clusters: Option<Vec<usize>>,
 }
+
+/// A regressor or factor as added to the model, before validation.
+#[derive(Debug, Clone)]
+enum Input<'a> {
+    Regressor {
+        name: String,
+        values: &'a [f64],
+    },
+    Factor {
+        name: String,
+        /// The level of each observation, as an index into `levels`.
+        codes: Vec<usize>,
+        /// The distinct levels in order of first appearance.
+        levels: Vec<String>,
+        reference: String,
+    },
+}
+
+impl Input<'_> {
+    fn name(&self) -> &str {
+        match self {
+            Self::Regressor { name, .. } | Self::Factor { name, .. } => name,
+        }
+    }
+
+    fn len(&self) -> usize {
+        match self {
+            Self::Regressor { values, .. } => values.len(),
+            Self::Factor { codes, .. } => codes.len(),
+        }
+    }
+}
+
+/// The columns of the design matrix besides the intercept.
+type Columns<'a> = Vec<(Term, Cow<'a, [f64]>)>;
 
 impl<'a> Ols<'a> {
     /// An intercept-only regression of the outcome `y`.
     pub fn new(y: &'a (impl AsRef<[f64]> + ?Sized)) -> Self {
         Self {
             y: y.as_ref(),
-            regressors: Vec::new(),
+            inputs: Vec::new(),
             clusters: None,
         }
     }
 
     /// Adds a regressor with one value per observation.
+    ///
+    /// Names must not contain `:`, which separates factors from their levels.
     pub fn regressor(
         mut self,
         name: impl Into<String>,
         values: &'a (impl AsRef<[f64]> + ?Sized),
     ) -> Self {
-        self.regressors.push((name.into(), values.as_ref()));
+        self.inputs.push(Input::Regressor {
+            name: name.into(),
+            values: values.as_ref(),
+        });
         self
     }
 
@@ -43,8 +85,52 @@ impl<'a> Ols<'a> {
         N: Into<String>,
         V: AsRef<[f64]> + ?Sized + 'a,
     {
-        self.regressors
-            .extend(regressors.into_iter().map(|(n, v)| (n.into(), v.as_ref())));
+        for (name, values) in regressors {
+            self = self.regressor(name, values);
+        }
+        self
+    }
+
+    /// Adds a categorical regressor with one label per observation, coded as
+    /// one dummy for each level except `reference`.
+    ///
+    /// Levels are identified by their [`Display`] form, and their dummies
+    /// are named `name:level`, in order of first appearance. Hence `name`
+    /// must not contain `:`, but levels may.
+    ///
+    /// ```
+    /// let y = [1.0, 2.0, 4.0, 3.0, 6.0, 5.0];
+    /// let group = ["a", "a", "b", "b", "c", "c"];
+    /// let fit = justols::Ols::new(&y).factor("group", group, "a").fit()?;
+    ///
+    /// let terms: Vec<_> = fit.coefficients().iter().map(|c| c.term.to_string()).collect();
+    /// assert_eq!(terms, ["!Intercept", "group:b", "group:c"]);
+    /// assert_eq!(fit.coefficient("group:c").unwrap().estimate, 4.0);
+    /// # Ok::<(), justols::Error>(())
+    /// ```
+    pub fn factor<L: Display>(
+        mut self,
+        name: impl Into<String>,
+        labels: impl IntoIterator<Item = L>,
+        reference: impl Display,
+    ) -> Self {
+        let mut ids = HashMap::new();
+        let mut levels = Vec::new();
+        let codes = labels
+            .into_iter()
+            .map(|label| {
+                *ids.entry(label.to_string()).or_insert_with_key(|level| {
+                    levels.push(level.clone());
+                    levels.len() - 1
+                })
+            })
+            .collect();
+        self.inputs.push(Input::Factor {
+            name: name.into(),
+            codes,
+            levels,
+            reference: reference.to_string(),
+        });
         self
     }
 
@@ -68,16 +154,18 @@ impl<'a> Ols<'a> {
     /// # Errors
     ///
     /// If the inputs have different lengths, contain non-finite values, have
-    /// fewer observations than parameters, or are perfectly collinear.
+    /// fewer observations than parameters, or are perfectly collinear; if a
+    /// name contains `:` or two inputs have the same name; or if a factor has
+    /// a single level or lacks its reference level.
     pub fn fit(&self) -> Result<Fit, Error> {
-        self.validate()?;
+        let columns = self.columns()?;
 
         let n = self.y.len();
-        let k = self.regressors.len() + 1;
+        let k = columns.len() + 1;
         let y = DVector::from_column_slice(self.y);
         let x = DMatrix::from_fn(n, k, |i, j| match j {
             0 => 1.0,
-            _ => self.regressors[j - 1].1[i],
+            _ => columns[j - 1].1[i],
         });
 
         let xtx_inv = (x.transpose() * &x).try_inverse().ok_or(Error::Singular)?;
@@ -125,11 +213,8 @@ impl<'a> Ols<'a> {
             &xtx_inv * meat * &xtx_inv
         });
 
-        let terms = std::iter::once(Term::Intercept).chain(
-            self.regressors
-                .iter()
-                .map(|(name, _)| Term::Regressor(name.clone())),
-        );
+        let terms =
+            std::iter::once(Term::Intercept).chain(columns.into_iter().map(|(term, _)| term));
         let coefficients = terms
             .enumerate()
             .map(|(j, term)| {
@@ -164,17 +249,68 @@ impl<'a> Ols<'a> {
         })
     }
 
-    fn validate(&self) -> Result<(), Error> {
+    /// Validates the inputs and expands factors into dummies.
+    fn columns(&self) -> Result<Columns<'a>, Error> {
         let n = self.y.len();
-        for (name, values) in &self.regressors {
-            if values.len() != n {
+        let mut columns = Columns::new();
+        let mut names = HashSet::new();
+        for input in &self.inputs {
+            let name = input.name();
+            if name.contains(':') {
+                return Err(Error::InvalidName { name: name.into() });
+            }
+            // Without ':' in names, unique names imply unique terms.
+            if !names.insert(name) {
+                return Err(Error::DuplicateName { name: name.into() });
+            }
+            if input.len() != n {
                 return Err(Error::LengthMismatch {
-                    name: name.clone(),
+                    name: name.into(),
                     expected: n,
-                    found: values.len(),
+                    found: input.len(),
                 });
             }
+            match input {
+                Input::Regressor { values, .. } => {
+                    if let Some(row) = values.iter().position(|v| !v.is_finite()) {
+                        return Err(Error::NonFiniteRegressor {
+                            name: name.into(),
+                            row,
+                        });
+                    }
+                    columns.push((Term::Regressor(name.into()), Cow::Borrowed(*values)));
+                }
+                Input::Factor {
+                    codes,
+                    levels,
+                    reference,
+                    ..
+                } => {
+                    let reference =
+                        levels.iter().position(|l| l == reference).ok_or_else(|| {
+                            Error::UnknownReference {
+                                factor: name.into(),
+                                reference: reference.clone(),
+                            }
+                        })?;
+                    if levels.len() < 2 {
+                        return Err(Error::SingleLevel {
+                            factor: name.into(),
+                        });
+                    }
+                    for (id, level) in levels.iter().enumerate().filter(|&(id, _)| id != reference)
+                    {
+                        let dummy = codes.iter().map(|&code| f64::from(code == id)).collect();
+                        let term = Term::Level {
+                            factor: name.into(),
+                            level: level.clone(),
+                        };
+                        columns.push((term, Cow::Owned(dummy)));
+                    }
+                }
+            }
         }
+
         if let Some(ids) = &self.clusters
             && ids.len() != n
         {
@@ -186,22 +322,14 @@ impl<'a> Ols<'a> {
         if let Some(row) = self.y.iter().position(|v| !v.is_finite()) {
             return Err(Error::NonFiniteOutcome { row });
         }
-        for (name, values) in &self.regressors {
-            if let Some(row) = values.iter().position(|v| !v.is_finite()) {
-                return Err(Error::NonFiniteRegressor {
-                    name: name.clone(),
-                    row,
-                });
-            }
-        }
-        let parameters = self.regressors.len() + 1;
+        let parameters = columns.len() + 1;
         if n < parameters {
             return Err(Error::TooFewObservations {
                 observations: n,
                 parameters,
             });
         }
-        Ok(())
+        Ok(columns)
     }
 }
 

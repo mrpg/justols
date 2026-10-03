@@ -1,33 +1,50 @@
 use std::fmt;
 
-/// A term of the model: the intercept or a named regressor.
+/// A term of the model.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Term {
     /// The constant, which every model includes.
     Intercept,
     /// A regressor, by the name it was added with.
     Regressor(String),
+    /// The dummy of a factor that is 1 where the factor equals `level`.
+    Level {
+        /// The factor's name.
+        factor: String,
+        /// The level this dummy indicates.
+        level: String,
+    },
 }
 
-impl Term {
-    /// The regressor name, or `None` for the intercept.
-    #[must_use]
-    pub fn name(&self) -> Option<&str> {
-        match self {
-            Self::Intercept => None,
-            Self::Regressor(name) => Some(name),
-        }
-    }
-}
-
-/// Displays the intercept as `!Intercept`, which cannot clash with a CSV
-/// column name in practice, and a regressor as its name.
+/// Displays the intercept as `!Intercept`, a regressor as its name, and a
+/// factor level as `factor:level`.
 impl fmt::Display for Term {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Intercept => f.write_str("!Intercept"),
             Self::Regressor(name) => f.write_str(name),
+            Self::Level { factor, level } => write!(f, "{factor}:{level}"),
         }
+    }
+}
+
+/// Compares with the [`Display`](fmt::Display) form, so
+/// `term == "group:b"` works.
+impl PartialEq<str> for Term {
+    fn eq(&self, name: &str) -> bool {
+        match self {
+            Self::Intercept => name == "!Intercept",
+            Self::Regressor(regressor) => regressor == name,
+            Self::Level { factor, level } => name
+                .split_once(':')
+                .is_some_and(|(f, l)| f == factor && l == level),
+        }
+    }
+}
+
+impl PartialEq<&str> for Term {
+    fn eq(&self, name: &&str) -> bool {
+        self == *name
     }
 }
 
@@ -94,12 +111,11 @@ impl Fit {
         &self.coefficients[0]
     }
 
-    /// The coefficient of the regressor called `name`.
+    /// The coefficient of the term displayed as `name`, such as `"x"` for a
+    /// regressor or `"group:b"` for a factor level.
     #[must_use]
     pub fn coefficient(&self, name: &str) -> Option<&Coefficient> {
-        self.coefficients[1..]
-            .iter()
-            .find(|c| c.term.name() == Some(name))
+        self.coefficients.iter().find(|c| c.term == name)
     }
 
     /// In-sample R², `1 - SSE / SST`. NaN if the outcome is constant.
