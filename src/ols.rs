@@ -101,7 +101,7 @@ impl<'a> Ols<'a> {
     /// one dummy for each level except `reference`.
     ///
     /// Levels are identified by their [`Display`] form, and their dummies
-    /// are named `name:level`, in order of first appearance. Hence `name`
+    /// are named `name:level`, sorted by the displayed level. Hence `name`
     /// must not contain `:` or equal `!Intercept`, but levels may.
     ///
     /// ```
@@ -319,8 +319,13 @@ impl<'a> Ols<'a> {
                             factor: name.into(),
                         });
                     }
-                    for (id, level) in levels.iter().enumerate().filter(|&(id, _)| id != reference)
-                    {
+                    let mut levels: Vec<_> = levels
+                        .iter()
+                        .enumerate()
+                        .filter(|&(id, _)| id != reference)
+                        .collect();
+                    levels.sort_unstable_by(|a, b| a.1.cmp(b.1));
+                    for (id, level) in levels {
                         let dummy = codes.iter().map(|&code| f64::from(code == id)).collect();
                         let term = Term::Level {
                             factor: name.into(),

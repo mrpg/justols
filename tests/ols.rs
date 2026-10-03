@@ -18,7 +18,11 @@ fn test_data() -> TestData {
         x: Default::default(),
     };
     for line in text.lines().skip(1) {
-        let row: Vec<f64> = line.split(',').map(|v| v.parse().unwrap()).collect();
+        let row: Vec<f64> = line
+            .split(',')
+            .take(4)
+            .map(|v| v.parse().unwrap())
+            .collect();
         data.outcome.push(row[0]);
         for (column, value) in data.x.iter_mut().zip(&row[1..]) {
             column.push(*value);
@@ -339,26 +343,26 @@ fn factor_matches_r() {
         .iter()
         .map(|c| c.term.to_string())
         .collect();
-    assert_eq!(terms, ["!Intercept", "x", "group:low", "group:high"]);
+    assert_eq!(terms, ["!Intercept", "x", "group:high", "group:low"]);
     assert_eq!(
         fit.coefficients()[2].term,
         Term::Level {
             factor: "group".into(),
-            level: "low".into()
+            level: "high".into()
         }
     );
 
     let beta = [
         0.859_888_323_971_552_9,
         0.711_432_126_184_587_2,
-        0.771_419_130_164_697_4,
         -0.316_225_801_149_579_16,
+        0.771_419_130_164_697_4,
     ];
     let se = [
         0.458_923_005_271_738_74,
         0.303_515_927_914_548_57,
-        0.558_045_197_448_907_1,
         0.666_428_107_678_792_2,
+        0.558_045_197_448_907_1,
     ];
     for ((c, beta), se) in fit.coefficients().iter().zip(beta).zip(se) {
         assert_close(c.estimate, beta);
@@ -366,6 +370,19 @@ fn factor_matches_r() {
     }
     assert_eq!(fit.df_model(), 3);
     assert_eq!(fit.wald_test().unwrap().df_num, 3);
+}
+
+#[test]
+fn factor_levels_are_sorted() {
+    let y = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+    let labels = ["A", "C", "B", "A", "C", "B"];
+    let fit = Ols::new(&y).factor("group", labels, "A").fit().unwrap();
+    let terms: Vec<_> = fit
+        .coefficients()
+        .iter()
+        .map(|c| c.term.to_string())
+        .collect();
+    assert_eq!(terms, ["!Intercept", "group:B", "group:C"]);
 }
 
 #[test]

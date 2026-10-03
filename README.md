@@ -42,7 +42,7 @@ The cluster column must be present in the CSV. Its values are read as raw CSV
 fields and grouped by exact equality, so cluster IDs may be strings, integers,
 or other non-numeric labels.
 
-To include a categorical regressor, write it as `column:reference`. Its values are read as raw CSV fields, and each level other than the reference becomes a dummy named `column:level`, in order of first appearance:
+To include a categorical regressor, write it as `column:reference`. Its values are read as raw CSV fields, and each level other than the reference becomes a dummy named `column:level`, sorted by level name:
 
 `target/release/justols data.csv outcome x treatment:control`
 
