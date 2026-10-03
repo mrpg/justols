@@ -1,1 +1,1 @@
-Error: not enough observations for model. Need at least as many rows as parameters (rows: 3, parameters: 4).
+Error: not enough observations: 3 rows for 4 parameters.

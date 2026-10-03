@@ -9,3 +9,4 @@ authors = ["Max R. P. Grossmann <m@max.pm>"]
 nalgebra = "0.35"
 csv = "1.4"
 statrs = "0.19"
+thiserror = "2"

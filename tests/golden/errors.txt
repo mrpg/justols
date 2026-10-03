@@ -10,3 +10,4 @@ unknown-flag	--robust data/test.csv outcome
 cluster-no-value	data/test.csv outcome --cluster
 cluster-empty-eq	--cluster= data/test.csv outcome
 empty	tests/fixtures/empty.csv y
+non-finite	tests/fixtures/nan.csv y x
