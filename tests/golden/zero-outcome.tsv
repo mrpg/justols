@@ -1,0 +1,14 @@
+!Intercept	0	0	NaN	NaN
+x	0	0	NaN	NaN
+r-squared	NaN
+r-squared-adj	NaN
+r-squared-loo	NaN
+press	0
+residual-se	0
+f-stat-robust	NaN
+f-pvalue-robust	NaN
+n	4
+df-model	1
+df-resid	2
+condition-number	3.7588860994071096
+max-leverage	0.7000000000000004

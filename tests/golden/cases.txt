@@ -10,3 +10,4 @@ saturated	tests/fixtures/saturated.csv y x
 unused-string	tests/fixtures/unused-string.csv y x
 one-cluster-each	--cluster id tests/fixtures/unused-string.csv y x
 overfitting	tests/fixtures/overfitting.csv y x x_2 x_3 x_4
+zero-outcome	tests/fixtures/zero.csv y x

@@ -206,7 +206,11 @@ fn outer_sum(vectors: &[DVector<f64>], k: usize) -> DMatrix<f64> {
         .fold(DMatrix::zeros(k, k), |acc, v| acc + v * v.transpose())
 }
 
+// statrs panics on a NaN argument, which arises as 0 / 0 in exact fits.
 fn t_p_value(t: f64, df: usize) -> f64 {
+    if t.is_nan() {
+        return f64::NAN;
+    }
     let dist = StudentsT::new(0.0, 1.0, df as f64).expect("df is positive");
     2.0 * (1.0 - dist.cdf(t.abs()))
 }
@@ -224,7 +228,11 @@ fn wald_test(beta: &DVector<f64>, vcov: &DMatrix<f64>, df_denom: usize) -> Optio
         f_stat,
         df_num: q,
         df_denom,
-        p_value: 1.0 - dist.cdf(f_stat),
+        p_value: if f_stat.is_nan() {
+            f64::NAN
+        } else {
+            1.0 - dist.cdf(f_stat)
+        },
     })
 }
 

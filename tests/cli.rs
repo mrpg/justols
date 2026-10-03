@@ -21,7 +21,9 @@ fn run(args: &str) -> Output {
 }
 
 fn cases(file: &str) -> Vec<(String, String)> {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden").join(file);
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/golden")
+        .join(file);
     fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("reading {}: {e}", path.display()))
         .lines()
@@ -34,7 +36,9 @@ fn cases(file: &str) -> Vec<(String, String)> {
 }
 
 fn golden(name: &str) -> String {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden").join(name);
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/golden")
+        .join(name);
     fs::read_to_string(&path).unwrap_or_else(|e| panic!("reading {}: {e}", path.display()))
 }
 
@@ -61,14 +65,22 @@ fn output_matches_golden_files() {
 
         let actual: Vec<_> = actual.lines().collect();
         let expected: Vec<_> = expected.lines().collect();
-        assert_eq!(actual.len(), expected.len(), "{name}: row count\n{actual:#?}");
+        assert_eq!(
+            actual.len(),
+            expected.len(),
+            "{name}: row count\n{actual:#?}"
+        );
         for (a, e) in actual.iter().zip(&expected) {
             let a: Vec<_> = a.split('\t').collect();
             let e: Vec<_> = e.split('\t').collect();
             assert_eq!(a[0], e[0], "{name}: row label");
             assert_eq!(a.len(), e.len(), "{name}: field count in row {}", e[0]);
             for (x, y) in a[1..].iter().zip(&e[1..]) {
-                assert!(numbers_match(y, x), "{name}: row {}: expected {y}, got {x}", e[0]);
+                assert!(
+                    numbers_match(y, x),
+                    "{name}: row {}: expected {y}, got {x}",
+                    e[0]
+                );
             }
         }
     }
