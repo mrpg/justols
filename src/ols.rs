@@ -217,7 +217,7 @@ fn t_p_value(t: f64, df: usize) -> f64 {
         return f64::NAN;
     }
     let dist = StudentsT::new(0.0, 1.0, df as f64).expect("df is positive");
-    2.0 * (1.0 - dist.cdf(t.abs()))
+    2.0 * dist.sf(t.abs())
 }
 
 fn wald_test(beta: &DVector<f64>, vcov: &DMatrix<f64>, df_denom: usize) -> Option<WaldTest> {
@@ -236,7 +236,7 @@ fn wald_test(beta: &DVector<f64>, vcov: &DMatrix<f64>, df_denom: usize) -> Optio
         p_value: if f_stat.is_nan() {
             f64::NAN
         } else {
-            1.0 - dist.cdf(f_stat)
+            dist.sf(f_stat)
         },
     })
 }

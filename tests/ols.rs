@@ -82,6 +82,7 @@ fn hc3_matches_r() {
     let wald = fit.wald_test().unwrap();
     assert_close(wald.f_stat, 135.239_832_312_122_8);
     assert_eq!((wald.df_num, wald.df_denom), (3, 196));
+    assert_close(wald.p_value, 1.681_398_992_421_493_5e-47);
 
     assert_eq!(fit.n_observations(), 200);
     assert_eq!(fit.df_model(), 3);
@@ -109,13 +110,13 @@ fn clustered_hc3_matches_r() {
     ];
     for ((c, se), p) in fit.coefficients().iter().zip(se).zip(p) {
         assert_close(c.std_error.unwrap(), se);
-        // 1 - cdf loses digits below machine epsilon.
-        assert!((c.p_value.unwrap() - p).abs() < 1e-14);
+        assert_close(c.p_value.unwrap(), p);
     }
 
     let wald = fit.wald_test().unwrap();
     assert_close(wald.f_stat, 217.249_688_275_255_08);
     assert_eq!((wald.df_num, wald.df_denom), (3, 19));
+    assert_close(wald.p_value, 7.048_259_018_012_652e-15);
     assert_eq!(fit.n_clusters(), Some(20));
     assert_eq!(fit.inference_df(), 19);
 }
