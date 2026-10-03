@@ -196,31 +196,39 @@ impl<'a> Ols<'a> {
             .as_ref()
             .map(|ids| ids.iter().max().map_or(0, |max| max + 1));
 
-        // HC3 scores: each row of X weighted by e_i / (1 - h_ii).
-        let scores: Vec<DVector<f64>> = (0..n)
-            .map(|i| x.row(i).transpose() * (residuals[i] / (1.0 - leverages[i])))
-            .collect();
-        let press = (df_resid > 0).then(|| {
-            (0..n)
-                .map(|i| (residuals[i] / (1.0 - leverages[i])).powi(2))
-                .sum::<f64>()
+        let loo_errors = (df_resid > 0)
+            .then(|| {
+                (0..n)
+                    .map(|i| residuals[i] / (1.0 - leverages[i]))
+                    .collect::<Vec<_>>()
+            })
+            .filter(|errors| errors.iter().all(|e| e.is_finite()));
+        let press = loo_errors.as_ref().and_then(|errors| {
+            let sum = errors.iter().map(|e| e * e).sum::<f64>();
+            sum.is_finite().then_some(sum)
         });
 
         let inference_df = n_clusters.map_or(df_resid, |g| g.saturating_sub(1));
-        let vcov = (df_resid > 0 && inference_df > 0).then(|| {
-            let meat = match (&self.clusters, n_clusters) {
-                (Some(ids), Some(g)) => {
-                    let mut sums = vec![DVector::zeros(k); g];
-                    for (score, &id) in scores.iter().zip(ids) {
-                        sums[id] += score;
+        let vcov = loo_errors
+            .as_ref()
+            .filter(|_| inference_df > 0)
+            .and_then(|errors| {
+                // HC3 scores: each row of X weighted by e_i / (1 - h_ii).
+                let scores: Vec<_> = (0..n).map(|i| x.row(i).transpose() * errors[i]).collect();
+                let meat = match (&self.clusters, n_clusters) {
+                    (Some(ids), Some(g)) => {
+                        let mut sums = vec![DVector::zeros(k); g];
+                        for (score, &id) in scores.iter().zip(ids) {
+                            sums[id] += score;
+                        }
+                        outer_sum(&sums, k)
                     }
-                    outer_sum(&sums, k)
-                }
-                _ => outer_sum(&scores, k),
-            };
-            let scaled_vcov = &xtx_inv * meat * &xtx_inv;
-            &transform * scaled_vcov * transform.transpose()
-        });
+                    _ => outer_sum(&scores, k),
+                };
+                let scaled_vcov = &xtx_inv * meat * &xtx_inv;
+                let vcov = &transform * scaled_vcov * transform.transpose();
+                vcov.iter().all(|v| v.is_finite()).then_some(vcov)
+            });
 
         let terms =
             std::iter::once(Term::Intercept).chain(columns.into_iter().map(|(term, _)| term));

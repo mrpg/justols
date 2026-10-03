@@ -51,7 +51,7 @@ impl PartialEq<&str> for Term {
 /// An estimated coefficient with its HC3 (or clustered HC3) inference.
 ///
 /// The inference fields are `None` when there are no residual degrees of
-/// freedom, or when clustering with a single cluster.
+/// freedom, when clustering with a single cluster, or when a leverage is 1.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct Coefficient {
@@ -133,14 +133,14 @@ impl Fit {
     }
 
     /// Leave-one-out R², `1 - PRESS / SST`. `None` without residual
-    /// degrees of freedom.
+    /// degrees of freedom or when a leverage is 1.
     #[must_use]
     pub fn loo_r_squared(&self) -> Option<f64> {
         self.press.map(|press| 1.0 - press / self.ss_tot)
     }
 
     /// The prediction sum of squares, `sum((e_i / (1 - h_ii))^2)`.
-    /// `None` without residual degrees of freedom.
+    /// `None` without residual degrees of freedom or when a leverage is 1.
     #[must_use]
     pub fn press(&self) -> Option<f64> {
         self.press

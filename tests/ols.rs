@@ -215,6 +215,24 @@ fn single_cluster_has_no_inference() {
 }
 
 #[test]
+fn unit_leverage_has_no_loo_or_hc3_inference() {
+    let fit = Ols::new(&[1.0, 2.0, 3.0, 4.0])
+        .regressor("singleton", &[1.0, 0.0, 0.0, 0.0])
+        .fit()
+        .unwrap();
+    assert_eq!(fit.max_leverage(), 1.0);
+    assert_eq!(fit.press(), None);
+    assert_eq!(fit.loo_r_squared(), None);
+    assert!(
+        fit.coefficients()
+            .iter()
+            .all(|c| { c.std_error.is_none() && c.t_stat.is_none() && c.p_value.is_none() })
+    );
+    assert!(fit.wald_test().is_none());
+    assert!(fit.residual_se().is_some());
+}
+
+#[test]
 fn exact_zero_fit_does_not_panic() {
     let fit = Ols::new(&[0.0; 4])
         .regressor("x", &[0.0, 1.0, 2.0, 3.0])
