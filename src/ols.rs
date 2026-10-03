@@ -155,7 +155,7 @@ impl<'a> Ols<'a> {
             ss_tot,
             wald_test,
             n_clusters,
-            condition_number: condition_number(x),
+            condition_number: condition_number(&x),
         })
     }
 
@@ -236,8 +236,8 @@ fn wald_test(beta: &DVector<f64>, vcov: &DMatrix<f64>, df_denom: usize) -> Optio
     })
 }
 
-fn condition_number(x: DMatrix<f64>) -> f64 {
-    let sv = x.singular_values();
+fn condition_number(x: &DMatrix<f64>) -> f64 {
+    let sv = x.clone().singular_values();
     let max = sv.max();
     let min = sv.min();
     if min > 0.0 { max / min } else { f64::INFINITY }

@@ -3,7 +3,9 @@ use std::fmt;
 /// A term of the model: the intercept or a named regressor.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Term {
+    /// The constant, which every model includes.
     Intercept,
+    /// A regressor, by the name it was added with.
     Regressor(String),
 }
 
@@ -36,8 +38,11 @@ impl fmt::Display for Term {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct Coefficient {
+    /// The term this coefficient belongs to.
     pub term: Term,
+    /// The OLS point estimate.
     pub estimate: f64,
+    /// The HC3 or clustered HC3 standard error.
     pub std_error: Option<f64>,
     /// `estimate / std_error`.
     pub t_stat: Option<f64>,
@@ -52,8 +57,11 @@ pub struct Coefficient {
 pub struct WaldTest {
     /// The Wald statistic divided by `df_num`, an F-statistic.
     pub f_stat: f64,
+    /// Numerator degrees of freedom, the number of slopes.
     pub df_num: usize,
+    /// Denominator degrees of freedom, [`Fit::inference_df`].
     pub df_denom: usize,
+    /// The p-value of `f_stat`.
     pub p_value: f64,
 }
 
@@ -80,6 +88,7 @@ impl Fit {
         &self.coefficients
     }
 
+    /// The intercept, which every model includes.
     #[must_use]
     pub fn intercept(&self) -> &Coefficient {
         &self.coefficients[0]
@@ -93,13 +102,13 @@ impl Fit {
             .find(|c| c.term.name() == Some(name))
     }
 
-    /// In-sample $R^2 = 1 - SSE / SST$. NaN if the outcome is constant.
+    /// In-sample R², `1 - SSE / SST`. NaN if the outcome is constant.
     #[must_use]
     pub fn r_squared(&self) -> f64 {
         self.r_squared
     }
 
-    /// Adjusted $R^2$. `None` without residual degrees of freedom.
+    /// Adjusted R². `None` without residual degrees of freedom.
     #[must_use]
     pub fn adj_r_squared(&self) -> Option<f64> {
         let n = self.n_observations() as f64;
@@ -107,21 +116,21 @@ impl Fit {
             .then(|| 1.0 - (1.0 - self.r_squared) * (n - 1.0) / self.df_resid() as f64)
     }
 
-    /// Leave-one-out $R^2 = 1 - PRESS / SST$. `None` without residual
+    /// Leave-one-out R², `1 - PRESS / SST`. `None` without residual
     /// degrees of freedom.
     #[must_use]
     pub fn loo_r_squared(&self) -> Option<f64> {
         self.press.map(|press| 1.0 - press / self.ss_tot)
     }
 
-    /// The prediction sum of squares, $\sum_i (e_i / (1 - h_{ii}))^2$.
+    /// The prediction sum of squares, `sum((e_i / (1 - h_ii))^2)`.
     /// `None` without residual degrees of freedom.
     #[must_use]
     pub fn press(&self) -> Option<f64> {
         self.press
     }
 
-    /// $\sqrt{SSE / df_{resid}}$. `None` without residual degrees of freedom.
+    /// The residual standard error, `sqrt(SSE / df_resid)`. `None` without residual degrees of freedom.
     #[must_use]
     pub fn residual_se(&self) -> Option<f64> {
         (self.df_resid() > 0).then(|| {
@@ -138,6 +147,7 @@ impl Fit {
         self.wald_test
     }
 
+    /// The number of observations.
     #[must_use]
     pub fn n_observations(&self) -> usize {
         self.residuals.len()
@@ -176,23 +186,25 @@ impl Fit {
         self.condition_number
     }
 
-    /// The largest diagonal element of the hat matrix, $\max_i h_{ii}$.
+    /// The largest diagonal element of the hat matrix, `max h_ii`.
     #[must_use]
     pub fn max_leverage(&self) -> f64 {
         self.leverages.iter().copied().fold(0.0, f64::max)
     }
 
-    /// The diagonal of the hat matrix, $h_{ii}$.
+    /// The diagonal of the hat matrix, `h_ii`.
     #[must_use]
     pub fn leverages(&self) -> &[f64] {
         &self.leverages
     }
 
+    /// The fitted values, `X * beta`.
     #[must_use]
     pub fn fitted(&self) -> &[f64] {
         &self.fitted
     }
 
+    /// The residuals, `y - X * beta`.
     #[must_use]
     pub fn residuals(&self) -> &[f64] {
         &self.residuals

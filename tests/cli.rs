@@ -50,7 +50,7 @@ fn numbers_match(expected: &str, actual: &str) -> bool {
         return false;
     };
     if e.is_nan() || a.is_nan() || e.is_infinite() || a.is_infinite() {
-        return e.is_nan() && a.is_nan() || e == a;
+        return e.is_nan() && a.is_nan() || e.total_cmp(&a).is_eq();
     }
     (e - a).abs() <= REL_TOL * e.abs().max(a.abs())
 }

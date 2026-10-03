@@ -1,3 +1,5 @@
+//! The `justols` command: OLS on a CSV file, printed as tab-separated rows.
+
 use std::io::{self, BufWriter, Write};
 use std::process::ExitCode;
 

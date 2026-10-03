@@ -3,7 +3,7 @@
 //! Every model includes an intercept. Standard errors are HC3
 //! (MacKinnon and White, 1985), or one-way clustered HC3 if the model is
 //! [clustered](Ols::cluster). Beyond the usual statistics, every [`Fit`]
-//! reports a robust Wald F-test, the leave-one-out $R^2$ with the PRESS
+//! reports a robust Wald F-test, the leave-one-out R² with the PRESS
 //! statistic (Hansen, *Econometrics*, Section 4.18), the condition number of
 //! the design matrix and the maximum leverage.
 //!

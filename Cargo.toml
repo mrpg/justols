@@ -6,9 +6,8 @@ rust-version = "1.89"
 license = "0BSD"
 authors = ["Max R. P. Grossmann <m@max.pm>"]
 description = "OLS with HC3 standard errors, leave-one-out R², and other diagnostics by default"
-readme = "README.md"
-keywords = ["ols", "regression", "statistics", "econometrics", "hc3"]
-categories = ["science", "mathematics", "command-line-utilities"]
+repository = "https://github.com/mrpg/justols"
+publish = false
 
 [features]
 default = ["cli"]
@@ -29,3 +28,11 @@ required-features = ["cli"]
 name = "cli"
 required-features = ["cli"]
 
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+cast_precision_loss = "allow"
+many_single_char_names = "allow"
