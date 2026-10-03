@@ -82,7 +82,7 @@ println!("LOO R²: {:?}", fit.loo_r_squared());
 print!("{fit}"); // the same table the command-line tool prints
 ```
 
-`fit` returns a `justols::Error` for mismatched lengths, non-finite values, too few observations, a singular design, a name containing `:` or used twice, or a factor without its reference level or with a single level. Statistics that are not defined, which the command-line tool prints as `NaN`, are `None` in the library. The data can be anything that is `AsRef<[f64]>`, such as slices, arrays or vectors. Run `cargo doc --open` for the full API.
+`fit` returns a `justols::Error` for mismatched lengths, non-finite values, too few observations, a singular design, a name containing `:`, used twice, or equal to the reserved `!Intercept` name, or a factor without its reference level or with a single level. Statistics that are not defined, which the command-line tool prints as `NaN`, are `None` in the library. The data can be anything that is `AsRef<[f64]>`, such as slices, arrays or vectors. Run `cargo doc --open` for the full API.
 
 ## Output
 

@@ -424,6 +424,14 @@ fn factor_errors() {
     assert_eq!(err, Error::InvalidName { name: "x:1".into() });
 
     let x = [1.0, 0.0, 1.0, 0.0];
+    let err = Ols::new(&y).regressor("!Intercept", &x).fit().unwrap_err();
+    assert_eq!(
+        err,
+        Error::DuplicateName {
+            name: "!Intercept".into()
+        }
+    );
+
     let err = Ols::new(&y)
         .regressor("x", &x)
         .regressor("x", &x)

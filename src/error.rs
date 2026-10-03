@@ -57,7 +57,7 @@ pub enum Error {
         name: String,
     },
 
-    /// Two regressors or factors have the same name.
+    /// A name is used twice or collides with the reserved `!Intercept` name.
     #[error("'{name}' occurs more than once")]
     DuplicateName {
         /// The repeated name.

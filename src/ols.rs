@@ -72,7 +72,7 @@ impl<'a> Ols<'a> {
 
     /// Adds a regressor with one value per observation.
     ///
-    /// Names must not contain `:`, which separates factors from their levels.
+    /// Names must not contain `:` or equal the reserved name `!Intercept`.
     pub fn regressor(
         mut self,
         name: impl Into<String>,
@@ -102,7 +102,7 @@ impl<'a> Ols<'a> {
     ///
     /// Levels are identified by their [`Display`] form, and their dummies
     /// are named `name:level`, in order of first appearance. Hence `name`
-    /// must not contain `:`, but levels may.
+    /// must not contain `:` or equal `!Intercept`, but levels may.
     ///
     /// ```
     /// let y = [1.0, 2.0, 4.0, 3.0, 6.0, 5.0];
@@ -161,7 +161,7 @@ impl<'a> Ols<'a> {
     ///
     /// If the inputs have different lengths, contain non-finite values, have
     /// fewer observations than parameters, or are perfectly collinear; if a
-    /// name contains `:` or two inputs have the same name; or if a factor has
+    /// name contains `:`, equals `!Intercept`, or is used twice; or if a factor has
     /// a single level or lacks its reference level.
     pub fn fit(&self) -> Result<Fit, Error> {
         let columns = self.columns()?;
@@ -274,7 +274,7 @@ impl<'a> Ols<'a> {
     fn columns(&self) -> Result<Columns<'a>, Error> {
         let n = self.y.len();
         let mut columns = Columns::new();
-        let mut names = HashSet::new();
+        let mut names = HashSet::from(["!Intercept"]);
         for input in &self.inputs {
             let name = input.name();
             if name.contains(':') {
