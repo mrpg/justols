@@ -9,13 +9,27 @@ use justols::Ols;
 const USAGE: &str = "\
 Usage: justols [flags] <data.csv> <outcome> [x1] [x2] [factor:reference] ...
 Flags:
-  --cluster <column>    Compute one-way clustered HC3 standard errors.";
+  --cluster <column>    Compute one-way clustered HC3 standard errors.
+  --time                Print the time taken to fit the model to stderr.";
+
+/// Evaluates `$code`, printing the elapsed time to stderr if `$enabled`.
+macro_rules! time_it {
+    ($enabled:expr, $code:expr) => {{
+        let start = std::time::Instant::now();
+        let result = $code;
+        if $enabled {
+            eprintln!("Elapsed: {:?}", start.elapsed());
+        }
+        result
+    }};
+}
 
 struct Opts {
     csv_path: String,
     outcome: String,
     regressors: Vec<Regressor>,
     cluster: Option<String>,
+    time: bool,
 }
 
 /// A regressor argument: `column`, or `column:reference` for a factor.
@@ -82,7 +96,7 @@ fn run() -> Result<(), String> {
     if let Some(labels) = &data.clusters {
         model = model.cluster(labels);
     }
-    let fit = model.fit().map_err(|e| format!("Error: {e}."))?;
+    let fit = time_it!(opts.time, model.fit().map_err(|e| format!("Error: {e}."))?);
 
     write!(io::stdout().lock(), "{fit}").map_err(|e| format!("Error writing output: {e}"))
 }
@@ -93,6 +107,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Opts, String> {
     let mut args = args.peekable();
     let mut positional = Vec::new();
     let mut cluster = None;
+    let mut time = false;
     while let Some(arg) = args.next() {
         if arg == "--cluster" {
             cluster = Some(args.next().ok_or(MISSING_CLUSTER)?);
@@ -101,6 +116,8 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Opts, String> {
                 return Err(MISSING_CLUSTER.into());
             }
             cluster = Some(value.to_owned());
+        } else if arg == "--time" {
+            time = true;
         } else if arg.starts_with("--") {
             return Err(format!("Unknown flag: {arg}"));
         } else {
@@ -117,6 +134,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Opts, String> {
         outcome,
         regressors: positional.map(Regressor::parse).collect(),
         cluster,
+        time,
     })
 }
 

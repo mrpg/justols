@@ -1,3 +1,4 @@
 Usage: justols [flags] <data.csv> <outcome> [x1] [x2] [factor:reference] ...
 Flags:
   --cluster <column>    Compute one-way clustered HC3 standard errors.
+  --time                Print the time taken to fit the model to stderr.
