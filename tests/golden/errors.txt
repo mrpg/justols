@@ -2,6 +2,7 @@ too-few-rows	tests/fixtures/tiny.csv y a b c
 missing-column	data/test.csv outcome nope
 missing-cluster	--cluster nope data/test.csv outcome x1
 non-numeric	tests/fixtures/unused-string.csv y id
+non-numeric-outcome	tests/fixtures/unused-string.csv id
 missing-file	tests/fixtures/does-not-exist.csv y
 no-args	
 one-arg	data/test.csv

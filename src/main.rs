@@ -185,16 +185,23 @@ fn read_csv(opts: &Opts) -> Result<Data, String> {
             })?;
             labels.push(label.to_owned());
         }
-        let number = |idx: usize| {
+        let number = |idx: usize, regressor: bool| {
             let value = field(idx)?;
-            value
-                .parse::<f64>()
-                .map_err(|_| format!("Error: non-numeric value '{value}' in '{}'.", &headers[idx]))
+            value.parse::<f64>().map_err(|_| {
+                let name = &headers[idx];
+                let mut message = format!("Error: non-numeric value '{value}' in '{name}'.");
+                if regressor {
+                    message.push_str(" For factors, use '");
+                    message.push_str(name);
+                    message.push_str(":<reference>'.");
+                }
+                message
+            })
         };
-        data.outcome.push(number(outcome_idx)?);
+        data.outcome.push(number(outcome_idx, false)?);
         for (values, &idx) in data.regressors.iter_mut().zip(&regressor_idx) {
             match values {
-                Values::Numeric(values) => values.push(number(idx)?),
+                Values::Numeric(values) => values.push(number(idx, true)?),
                 Values::Labels(labels) => labels.push(field(idx)?.to_owned()),
             }
         }

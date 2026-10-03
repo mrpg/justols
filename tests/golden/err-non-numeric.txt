@@ -1,1 +1,1 @@
-Error: non-numeric value 'a' in 'id'.
+Error: non-numeric value 'a' in 'id'. For factors, use 'id:<reference>'.
