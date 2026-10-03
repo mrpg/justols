@@ -19,27 +19,32 @@ pub struct Ols<'a> {
 
 impl<'a> Ols<'a> {
     /// An intercept-only regression of the outcome `y`.
-    pub fn new(y: &'a [f64]) -> Self {
+    pub fn new(y: &'a (impl AsRef<[f64]> + ?Sized)) -> Self {
         Self {
-            y,
+            y: y.as_ref(),
             regressors: Vec::new(),
             clusters: None,
         }
     }
 
     /// Adds a regressor with one value per observation.
-    pub fn regressor(mut self, name: impl Into<String>, values: &'a [f64]) -> Self {
-        self.regressors.push((name.into(), values));
+    pub fn regressor(
+        mut self,
+        name: impl Into<String>,
+        values: &'a (impl AsRef<[f64]> + ?Sized),
+    ) -> Self {
+        self.regressors.push((name.into(), values.as_ref()));
         self
     }
 
-    /// Adds several regressors at once.
-    pub fn regressors<N: Into<String>>(
-        mut self,
-        regressors: impl IntoIterator<Item = (N, &'a [f64])>,
-    ) -> Self {
+    /// Adds several `(name, values)` regressors at once.
+    pub fn regressors<N, V>(mut self, regressors: impl IntoIterator<Item = (N, &'a V)>) -> Self
+    where
+        N: Into<String>,
+        V: AsRef<[f64]> + ?Sized + 'a,
+    {
         self.regressors
-            .extend(regressors.into_iter().map(|(n, v)| (n.into(), v)));
+            .extend(regressors.into_iter().map(|(n, v)| (n.into(), v.as_ref())));
         self
     }
 

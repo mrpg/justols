@@ -72,9 +72,10 @@ for c in fit.coefficients() {
     println!("{}: {} (p = {:?})", c.term, c.estimate, c.p_value);
 }
 println!("LOO R²: {:?}", fit.loo_r_squared());
+print!("{fit}"); // the same table the command-line tool prints
 ```
 
-`fit` returns a `justols::Error` for mismatched lengths, non-finite values, too few observations or a singular design. Statistics that are not defined, which the command-line tool prints as `NaN`, are `None` in the library. Run `cargo doc --open` for the full API.
+`fit` returns a `justols::Error` for mismatched lengths, non-finite values, too few observations or a singular design. Statistics that are not defined, which the command-line tool prints as `NaN`, are `None` in the library. The data can be anything that is `AsRef<[f64]>`, such as slices, arrays or vectors. Run `cargo doc --open` for the full API.
 
 ## Output
 

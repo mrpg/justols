@@ -126,11 +126,7 @@ fn cluster_labels_can_be_any_hashable_type() {
     let by_int = fit_full(&data, Some((0..200).map(|i| i % 20).collect()));
     let labels: Vec<String> = (0..200).map(|i| format!("firm {}", i % 20)).collect();
     let by_str = Ols::new(&data.outcome)
-        .regressors([
-            ("x1", &data.x[0][..]),
-            ("x2", &data.x[1]),
-            ("x3", &data.x[2]),
-        ])
+        .regressors([("x1", &data.x[0]), ("x2", &data.x[1]), ("x3", &data.x[2])])
         .cluster(&labels)
         .fit()
         .unwrap();
@@ -256,7 +252,7 @@ fn errors() {
     );
 
     let few = Ols::new(&y)
-        .regressors([("a", &x[..]), ("b", &x), ("c", &x)])
+        .regressors([("a", &x), ("b", &x), ("c", &x)])
         .fit()
         .unwrap_err();
     assert_eq!(

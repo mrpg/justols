@@ -210,3 +210,42 @@ impl Fit {
         &self.residuals
     }
 }
+
+/// Formats the fit as the tab-separated table printed by the `justols`
+/// command, one row per coefficient and per statistic, with `NaN` for
+/// statistics that are not defined. The README documents every row.
+impl fmt::Display for Fit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let or_nan = |x: Option<f64>| x.unwrap_or(f64::NAN);
+
+        for c in &self.coefficients {
+            writeln!(
+                f,
+                "{}\t{}\t{}\t{}\t{}",
+                c.term,
+                c.estimate,
+                or_nan(c.std_error),
+                or_nan(c.t_stat),
+                or_nan(c.p_value),
+            )?;
+        }
+
+        let wald = self.wald_test;
+        let mut row = |name: &str, value: &dyn fmt::Display| writeln!(f, "{name}\t{value}");
+        row("r-squared", &self.r_squared)?;
+        row("r-squared-adj", &or_nan(self.adj_r_squared()))?;
+        row("r-squared-loo", &or_nan(self.loo_r_squared()))?;
+        row("press", &or_nan(self.press))?;
+        row("residual-se", &or_nan(self.residual_se()))?;
+        row("f-stat-robust", &or_nan(wald.map(|w| w.f_stat)))?;
+        row("f-pvalue-robust", &or_nan(wald.map(|w| w.p_value)))?;
+        row("n", &self.n_observations())?;
+        row("df-model", &self.df_model())?;
+        row("df-resid", &self.df_resid())?;
+        if let Some(g) = self.n_clusters {
+            row("n-clusters", &g)?;
+        }
+        row("condition-number", &self.condition_number)?;
+        row("max-leverage", &self.max_leverage())
+    }
+}

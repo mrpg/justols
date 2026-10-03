@@ -33,6 +33,9 @@
 //! assert_eq!(fit.inference_df(), 2);
 //! # Ok::<(), justols::Error>(())
 //! ```
+//!
+//! A [`Fit`] displays as the tab-separated table that the `justols` command
+//! prints, so `println!("{fit}")` gives the full output.
 
 mod error;
 mod fit;

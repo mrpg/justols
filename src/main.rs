@@ -1,10 +1,10 @@
 //! The `justols` command: OLS on a CSV file, printed as tab-separated rows.
 
-use std::io::{self, BufWriter, Write};
+use std::io::{self, Write};
 use std::process::ExitCode;
 
 use csv::ReaderBuilder;
-use justols::{Fit, Ols};
+use justols::Ols;
 
 const USAGE: &str = "\
 Usage: justols [flags] <data.csv> <outcome> [x1] [x2] ...
@@ -39,18 +39,14 @@ fn run() -> Result<(), String> {
     let opts = parse_args(std::env::args().skip(1))?;
     let data = read_csv(&opts)?;
 
-    let mut model = Ols::new(&data.outcome).regressors(
-        opts.regressors
-            .iter()
-            .zip(&data.regressors)
-            .map(|(name, values)| (name.as_str(), values.as_slice())),
-    );
+    let mut model =
+        Ols::new(&data.outcome).regressors(opts.regressors.iter().zip(&data.regressors));
     if let Some(labels) = &data.clusters {
         model = model.cluster(labels);
     }
     let fit = model.fit().map_err(|e| format!("Error: {e}."))?;
 
-    print_fit(&fit).map_err(|e| format!("Error writing output: {e}"))
+    write!(io::stdout().lock(), "{fit}").map_err(|e| format!("Error writing output: {e}"))
 }
 
 fn parse_args(args: impl Iterator<Item = String>) -> Result<Opts, String> {
@@ -155,42 +151,4 @@ fn read_csv(opts: &Opts) -> Result<Data, String> {
         return Err("Error: no data rows in CSV.".into());
     }
     Ok(data)
-}
-
-/// Prints one tab-separated row per coefficient and statistic, with `NaN` for
-/// statistics that are not defined.
-fn print_fit(fit: &Fit) -> io::Result<()> {
-    let mut out = BufWriter::new(io::stdout().lock());
-    let or_nan = |x: Option<f64>| x.unwrap_or(f64::NAN);
-
-    for c in fit.coefficients() {
-        writeln!(
-            out,
-            "{}\t{}\t{}\t{}\t{}",
-            c.term,
-            c.estimate,
-            or_nan(c.std_error),
-            or_nan(c.t_stat),
-            or_nan(c.p_value),
-        )?;
-    }
-
-    let wald = fit.wald_test();
-    let mut row = |name: &str, value: &dyn std::fmt::Display| writeln!(out, "{name}\t{value}");
-    row("r-squared", &fit.r_squared())?;
-    row("r-squared-adj", &or_nan(fit.adj_r_squared()))?;
-    row("r-squared-loo", &or_nan(fit.loo_r_squared()))?;
-    row("press", &or_nan(fit.press()))?;
-    row("residual-se", &or_nan(fit.residual_se()))?;
-    row("f-stat-robust", &or_nan(wald.map(|w| w.f_stat)))?;
-    row("f-pvalue-robust", &or_nan(wald.map(|w| w.p_value)))?;
-    row("n", &fit.n_observations())?;
-    row("df-model", &fit.df_model())?;
-    row("df-resid", &fit.df_resid())?;
-    if let Some(g) = fit.n_clusters() {
-        row("n-clusters", &g)?;
-    }
-    row("condition-number", &fit.condition_number())?;
-    row("max-leverage", &fit.max_leverage())?;
-    out.flush()
 }
