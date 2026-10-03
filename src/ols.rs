@@ -54,6 +54,12 @@ impl Input<'_> {
 /// The columns of the design matrix besides the intercept.
 type Columns<'a> = Vec<(Term, Cow<'a, [f64]>)>;
 
+struct Solution {
+    beta: DVector<f64>,
+    gram_inverse: DMatrix<f64>,
+    leverages: Vec<f64>,
+}
+
 impl<'a> Ols<'a> {
     /// An intercept-only regression of the outcome `y`.
     pub fn new(y: &'a (impl AsRef<[f64]> + ?Sized)) -> Self {
@@ -163,24 +169,26 @@ impl<'a> Ols<'a> {
         let n = self.y.len();
         let k = columns.len() + 1;
         let y = DVector::from_column_slice(self.y);
-        let x = DMatrix::from_fn(n, k, |i, j| match j {
+        let mut x = DMatrix::from_fn(n, k, |i, j| match j {
             0 => 1.0,
             _ => columns[j - 1].1[i],
         });
+        let condition_number = condition_number(&x);
 
-        let xtx_inv = (x.transpose() * &x).try_inverse().ok_or(Error::Singular)?;
-        let beta = &xtx_inv * (x.transpose() * &y);
-        let fitted = &x * &beta;
+        let transform = normalize_columns(&mut x)?;
+
+        let Solution {
+            beta: scaled_beta,
+            gram_inverse: xtx_inv,
+            leverages,
+        } = solve(&x, &y)?;
+        let beta = &transform * &scaled_beta;
+        let fitted = &x * &scaled_beta;
         let residuals = &y - &fitted;
 
         let ss_res: f64 = residuals.iter().map(|e| e * e).sum();
         let y_mean = y.mean();
         let ss_tot: f64 = y.iter().map(|yi| (yi - y_mean).powi(2)).sum();
-
-        let leverages: Vec<f64> = x
-            .row_iter()
-            .map(|row| (row * &xtx_inv * row.transpose())[(0, 0)])
-            .collect();
 
         let df_resid = n - k;
         let n_clusters = self
@@ -210,7 +218,8 @@ impl<'a> Ols<'a> {
                 }
                 _ => outer_sum(&scores, k),
             };
-            &xtx_inv * meat * &xtx_inv
+            let scaled_vcov = &xtx_inv * meat * &xtx_inv;
+            &transform * scaled_vcov * transform.transpose()
         });
 
         let terms =
@@ -240,12 +249,16 @@ impl<'a> Ols<'a> {
             fitted: fitted.data.into(),
             residuals: residuals.data.into(),
             leverages,
-            r_squared: 1.0 - ss_res / ss_tot,
+            r_squared: if k == 1 && ss_tot != 0.0 {
+                0.0
+            } else {
+                1.0 - ss_res / ss_tot
+            },
             press,
             ss_tot,
             wald_test,
             n_clusters,
-            condition_number: condition_number(&x),
+            condition_number,
         })
     }
 
@@ -331,6 +344,63 @@ impl<'a> Ols<'a> {
         }
         Ok(columns)
     }
+}
+
+// Center and scale before decomposition: an offset column can make X'X
+// numerically singular even when the design has full rank.
+fn normalize_columns(x: &mut DMatrix<f64>) -> Result<DMatrix<f64>, Error> {
+    let k = x.ncols();
+    let mut transform = DMatrix::identity(k, k);
+    for j in 1..k {
+        let column = x.column(j);
+        let min = column.min();
+        let max = column.max();
+        if min >= max {
+            return Err(Error::Singular);
+        }
+        let span = max - min;
+        let (center, scale) = if span.is_finite() {
+            (min + span / 2.0, span)
+        } else {
+            (min / 2.0 + max / 2.0, max / 2.0 - min / 2.0)
+        };
+        for i in 0..x.nrows() {
+            x[(i, j)] = (x[(i, j)] - center) / scale;
+        }
+        transform[(0, j)] = -center / scale;
+        transform[(j, j)] = 1.0 / scale;
+    }
+    Ok(transform)
+}
+
+fn solve(x: &DMatrix<f64>, y: &DVector<f64>) -> Result<Solution, Error> {
+    let svd = x.clone().svd(true, true);
+    let singular_values = &svd.singular_values;
+    let tolerance = f64::EPSILON * x.nrows().max(x.ncols()) as f64 * singular_values.max();
+    if singular_values.min() <= tolerance {
+        return Err(Error::Singular);
+    }
+    let mut beta = svd.solve(y, tolerance).map_err(|_| Error::Singular)?;
+    let correction = svd
+        .solve(&(y - x * &beta), tolerance)
+        .map_err(|_| Error::Singular)?;
+    beta += correction;
+
+    let v = svd.v_t.as_ref().ok_or(Error::Singular)?.transpose();
+    let inverse_squares = singular_values.map(|s| 1.0 / (s * s));
+    let gram_inverse = &v * DMatrix::from_diagonal(&inverse_squares) * v.transpose();
+    let leverages = svd
+        .u
+        .as_ref()
+        .ok_or(Error::Singular)?
+        .row_iter()
+        .map(|row| row.iter().map(|u| u * u).sum::<f64>().clamp(0.0, 1.0))
+        .collect();
+    Ok(Solution {
+        beta,
+        gram_inverse,
+        leverages,
+    })
 }
 
 fn outer_sum(vectors: &[DVector<f64>], k: usize) -> DMatrix<f64> {

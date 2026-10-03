@@ -92,6 +92,16 @@ fn hc3_matches_r() {
 }
 
 #[test]
+fn large_regressor_offset_does_not_corrupt_fit() {
+    let y = [1.0, 2.0, 3.0, 4.0];
+    let x = [100_000_000.0, 100_000_001.0, 100_000_002.0, 100_000_003.0];
+    let fit = Ols::new(&y).regressor("x", &x).fit().unwrap();
+    assert!((fit.intercept().estimate + 99_999_999.0).abs() < 1e-6);
+    assert!((fit.coefficient("x").unwrap().estimate - 1.0).abs() < 1e-12);
+    assert!((fit.r_squared() - 1.0).abs() < 1e-12);
+}
+
+#[test]
 fn clustered_hc3_matches_r() {
     let data = test_data();
     let fit = fit_full(&data, Some((0..200).map(|i| i % 20).collect()));
