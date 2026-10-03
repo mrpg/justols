@@ -42,6 +42,12 @@ The cluster column must be present in the CSV. Its values are read as raw CSV
 fields and grouped by exact equality, so cluster IDs may be strings, integers,
 or other non-numeric labels.
 
+To include a categorical regressor, write it as `column:reference`. Its values are read as raw CSV fields, and each level other than the reference becomes a dummy named `column:level`, in order of first appearance:
+
+`target/release/justols data.csv outcome x treatment:control`
+
+Any column can be used this way, including integer codes such as `year:2020`. Because `:` marks factors, `justols` refuses CSV files with a `:` in any column name.
+
 For an intercept-only regression, omit the regressor columns:
 
 `target/release/justols data/test.csv outcome`
@@ -65,6 +71,7 @@ use justols::Ols;
 let fit = Ols::new(&y)
     .regressor("x1", &x1)
     .regressor("x2", &x2)
+    .factor("treatment", &arms, "control") // dummies treatment:<level>
     .cluster(&firm_ids) // optional: any hashable label type
     .fit()?;
 
@@ -75,7 +82,7 @@ println!("LOO R²: {:?}", fit.loo_r_squared());
 print!("{fit}"); // the same table the command-line tool prints
 ```
 
-`fit` returns a `justols::Error` for mismatched lengths, non-finite values, too few observations or a singular design. Statistics that are not defined, which the command-line tool prints as `NaN`, are `None` in the library. The data can be anything that is `AsRef<[f64]>`, such as slices, arrays or vectors. Run `cargo doc --open` for the full API.
+`fit` returns a `justols::Error` for mismatched lengths, non-finite values, too few observations, a singular design, a name containing `:` or used twice, or a factor without its reference level or with a single level. Statistics that are not defined, which the command-line tool prints as `NaN`, are `None` in the library. The data can be anything that is `AsRef<[f64]>`, such as slices, arrays or vectors. Run `cargo doc --open` for the full API.
 
 ## Output
 
@@ -83,7 +90,7 @@ Each row is tab-separated. Coefficient rows have five fields:
 
 `name beta hc3-se t-stat p-value`
 
-- `name`: the coefficient name. The intercept is printed as `!Intercept`.
+- `name`: the coefficient name. The intercept is printed as `!Intercept`, and factor dummies as `column:level`.
 - `beta`: the OLS coefficient estimate.
 - `hc3-se`: the HC3 heteroskedasticity-consistent standard error.
 - `t-stat`: `beta / hc3-se`.
