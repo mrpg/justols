@@ -1,0 +1,12 @@
+singular	data/test.csv outcome x1 x1
+too-few-rows	tests/fixtures/constant.csv y y y y
+missing-column	data/test.csv outcome nope
+missing-cluster	--cluster nope data/test.csv outcome x1
+non-numeric	tests/fixtures/unused-string.csv y id
+missing-file	tests/fixtures/does-not-exist.csv y
+no-args	
+one-arg	data/test.csv
+unknown-flag	--robust data/test.csv outcome
+cluster-no-value	data/test.csv outcome --cluster
+cluster-empty-eq	--cluster= data/test.csv outcome
+empty	tests/fixtures/empty.csv y

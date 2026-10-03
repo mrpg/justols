@@ -1,0 +1,13 @@
+!Intercept	4	1.414213562373095	2.8284271247461903	0.10557280900008426
+r-squared	0
+r-squared-adj	0
+r-squared-loo	-1.2499999999999996
+press	17.999999999999996
+residual-se	2
+f-stat-robust	NaN
+f-pvalue-robust	NaN
+n	3
+df-model	0
+df-resid	2
+condition-number	1
+max-leverage	0.3333333333333333

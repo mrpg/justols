@@ -1,0 +1,3 @@
+Usage: justols [flags] <data.csv> <outcome> [x1] [x2] ...
+Flags:
+  --cluster <column>    Compute one-way clustered HC3 standard errors.
