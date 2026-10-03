@@ -2,11 +2,30 @@
 name = "justols"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.89"
 license = "0BSD"
 authors = ["Max R. P. Grossmann <m@max.pm>"]
+description = "OLS with HC3 standard errors, leave-one-out R², and other diagnostics by default"
+readme = "README.md"
+keywords = ["ols", "regression", "statistics", "econometrics", "hc3"]
+categories = ["science", "mathematics", "command-line-utilities"]
+
+[features]
+default = ["cli"]
+# The `justols` binary. Library users can opt out with `default-features = false`.
+cli = ["dep:csv"]
 
 [dependencies]
+csv = { version = "1.4", optional = true }
 nalgebra = "0.35"
-csv = "1.4"
 statrs = "0.19"
 thiserror = "2"
+
+[[bin]]
+name = "justols"
+required-features = ["cli"]
+
+[[test]]
+name = "cli"
+required-features = ["cli"]
+
