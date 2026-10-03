@@ -11,3 +11,5 @@ unused-string	tests/fixtures/unused-string.csv y x
 one-cluster-each	--cluster id tests/fixtures/unused-string.csv y x
 overfitting	tests/fixtures/overfitting.csv y x x_2 x_3 x_4
 zero-outcome	tests/fixtures/zero.csv y x
+factor	tests/fixtures/factors.csv y x group:control
+factor-clustered	--cluster firm tests/fixtures/factors.csv y group:high x

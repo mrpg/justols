@@ -12,3 +12,6 @@ empty	tests/fixtures/empty.csv y
 non-finite	tests/fixtures/nan.csv y x
 singular	tests/fixtures/collinear.csv y a b
 duplicate	data/test.csv outcome x1 x1
+factor-unknown-reference	tests/fixtures/factors.csv y group:nope
+factor-missing-column	tests/fixtures/factors.csv y nope:a
+colon-in-header	tests/fixtures/colon.csv y

@@ -7,21 +7,51 @@ use csv::ReaderBuilder;
 use justols::Ols;
 
 const USAGE: &str = "\
-Usage: justols [flags] <data.csv> <outcome> [x1] [x2] ...
+Usage: justols [flags] <data.csv> <outcome> [x1] [x2] [factor:reference] ...
 Flags:
   --cluster <column>    Compute one-way clustered HC3 standard errors.";
 
 struct Opts {
     csv_path: String,
     outcome: String,
-    regressors: Vec<String>,
+    regressors: Vec<Regressor>,
     cluster: Option<String>,
+}
+
+/// A regressor argument: `column`, or `column:reference` for a factor.
+enum Regressor {
+    Numeric(String),
+    Factor { column: String, reference: String },
+}
+
+impl Regressor {
+    fn parse(arg: String) -> Self {
+        match arg.split_once(':') {
+            Some((column, reference)) => Self::Factor {
+                column: column.to_owned(),
+                reference: reference.to_owned(),
+            },
+            None => Self::Numeric(arg),
+        }
+    }
+
+    fn column(&self) -> &str {
+        match self {
+            Self::Numeric(column) | Self::Factor { column, .. } => column,
+        }
+    }
+}
+
+/// The values of a regressor column.
+enum Values {
+    Numeric(Vec<f64>),
+    Labels(Vec<String>),
 }
 
 /// The columns of the CSV file used by the model.
 struct Data {
     outcome: Vec<f64>,
-    regressors: Vec<Vec<f64>>,
+    regressors: Vec<Values>,
     clusters: Option<Vec<String>>,
 }
 
@@ -39,8 +69,16 @@ fn run() -> Result<(), String> {
     let opts = parse_args(std::env::args().skip(1))?;
     let data = read_csv(&opts)?;
 
-    let mut model =
-        Ols::new(&data.outcome).regressors(opts.regressors.iter().zip(&data.regressors));
+    let mut model = Ols::new(&data.outcome);
+    for (regressor, values) in opts.regressors.iter().zip(&data.regressors) {
+        model = match (regressor, values) {
+            (Regressor::Numeric(name), Values::Numeric(values)) => model.regressor(name, values),
+            (Regressor::Factor { column, reference }, Values::Labels(labels)) => {
+                model.factor(column, labels, reference)
+            }
+            _ => unreachable!("read_csv reads factors as labels"),
+        };
+    }
     if let Some(labels) = &data.clusters {
         model = model.cluster(labels);
     }
@@ -77,7 +115,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Opts, String> {
     Ok(Opts {
         csv_path,
         outcome,
-        regressors: positional.collect(),
+        regressors: positional.map(Regressor::parse).collect(),
         cluster,
     })
 }
@@ -91,6 +129,11 @@ fn read_csv(opts: &Opts) -> Result<Data, String> {
         .headers()
         .map_err(|e| format!("Error reading {}: {e}", opts.csv_path))?
         .clone();
+    if let Some(bad) = headers.iter().find(|h| h.contains(':')) {
+        return Err(format!(
+            "Error: column name '{bad}' contains ':', which is reserved for factors."
+        ));
+    }
 
     let column = |name: &str, what: &str| {
         headers.iter().position(|h| h == name).ok_or_else(|| {
@@ -110,12 +153,19 @@ fn read_csv(opts: &Opts) -> Result<Data, String> {
     let regressor_idx = opts
         .regressors
         .iter()
-        .map(|name| column(name, ""))
+        .map(|regressor| column(regressor.column(), ""))
         .collect::<Result<Vec<_>, _>>()?;
 
     let mut data = Data {
         outcome: Vec::new(),
-        regressors: vec![Vec::new(); regressor_idx.len()],
+        regressors: opts
+            .regressors
+            .iter()
+            .map(|regressor| match regressor {
+                Regressor::Numeric(_) => Values::Numeric(Vec::new()),
+                Regressor::Factor { .. } => Values::Labels(Vec::new()),
+            })
+            .collect(),
         clusters: cluster_idx.map(|_| Vec::new()),
     };
     for record in reader.records() {
@@ -142,8 +192,11 @@ fn read_csv(opts: &Opts) -> Result<Data, String> {
                 .map_err(|_| format!("Error: non-numeric value '{value}' in '{}'.", &headers[idx]))
         };
         data.outcome.push(number(outcome_idx)?);
-        for (column, &idx) in data.regressors.iter_mut().zip(&regressor_idx) {
-            column.push(number(idx)?);
+        for (values, &idx) in data.regressors.iter_mut().zip(&regressor_idx) {
+            match values {
+                Values::Numeric(values) => values.push(number(idx)?),
+                Values::Labels(labels) => labels.push(field(idx)?.to_owned()),
+            }
         }
     }
 
